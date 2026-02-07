@@ -283,16 +283,29 @@ void Update(void *instance) {
                     void* listItems = *(void**)((uintptr_t)itemList + 0x10);
                     int listSize = *(int*)((uintptr_t)itemList + 0x18);
                     
+                    LOGI("Current size: %d", listSize);
+                    
                     if (listItems != nullptr) {
                         int listCapacity = *(int*)((uintptr_t)listItems + 0x18);
+                        LOGI("Current capacity: %d", listCapacity);
+                        
+                        // If full, try to expand capacity first
+                        if (listSize >= listCapacity && listCapacity < 100) {
+                            // Double the capacity
+                            int newCapacity = listCapacity * 2;
+                            if (newCapacity < 20) newCapacity = 20;
+                            *(int*)((uintptr_t)listItems + 0x18) = newCapacity;
+                            listCapacity = newCapacity;
+                            LOGI("Expanded capacity to: %d", newCapacity);
+                        }
                         
                         if (listSize < listCapacity) {
                             void** listItemsArray = (void**)((uintptr_t)listItems + 0x20);
                             listItemsArray[listSize] = foundItem;
                             *(int*)((uintptr_t)itemList + 0x18) = listSize + 1;
-                            LOGI("SUCCESS! Item spawned! Size: %d", listSize + 1);
+                            LOGI("SUCCESS! Item spawned! New size: %d", listSize + 1);
                         } else {
-                            LOGI("Inventory full!");
+                            LOGI("Still full after expand! Size=%d, Cap=%d", listSize, listCapacity);
                         }
                     }
                 }
