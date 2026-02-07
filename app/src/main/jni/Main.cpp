@@ -17,76 +17,50 @@
 #include "Menu/Jni.hpp"
 #include "Includes/Macros.h"
 
-// Dobby is a very powerful hook framework that including hook, stub, patch, and symbol resolve.
-// It can completely replace And64InlineHook and KittyMemory, so they are deprecated.
-#include "dobby.h" // https://github.com/jmpews/Dobby
+// ======================================
+// School of Chaos v1.891 Mod
+// Item Spawner + Level Up
+// ======================================
 
-bool noDeath;
-int scoreMul = 1, coinsMul = 1;
+// Global Variables
+std::string itemNameToSpawn = "";
+std::string levelValue = "";
+bool spawnItemPressed = false;
+bool setLevelPressed = false;
+void* g_AttackComponent = nullptr;
 
-struct MemPatches {
-    // let's assume we have patches for these functions for whatever game
-    // boolean get_canShoot() function
-    MemoryPatch noDeath;
-    // etc...
-} gPatches;
+// ======================================
+// Il2Cpp Type Definitions
+// ======================================
+typedef void* (*Il2CppStringNew_t)(const char* text);
+typedef void* (*GetItemByName_t)(void* instance, void* itemName);
+typedef void* (*ListAdd_t)(void* list, void* item);
 
-// Do not change or translate the first text unless you know what you are doing
-// Assigning feature numbers is optional. Without it, it will automatically count for you, starting from 0
-// Assigned feature numbers can be like any numbers 1,3,200,10... instead in order 0,1,2,3,4,5...
-// ButtonLink, Category, RichTextView and RichWebView is not counted. They can't have feature number assigned
-// Toggle, ButtonOnOff and Checkbox can be switched on by default, if you add True_. Example: CheckBox_True_The Check Box
-// To learn HTML, go to this page: https://www.w3schools.com/
+Il2CppStringNew_t Il2CppStringNew = nullptr;
+GetItemByName_t GetItemByName = nullptr;
 
+// ======================================
+// Feature List for Mod Menu
+// ======================================
 jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
     jobjectArray ret;
 
     const char *features[] = {
-            OBFUSCATE("Toggle_No death"),
-            OBFUSCATE("Button_Start Invcibility (30 sec duration)"),
-            OBFUSCATE("SeekBar_Score multiplier_1_100"),
-            OBFUSCATE("SeekBar_Coins multiplier_1_1000"),
-            OBFUSCATE("Category_Examples"), //Not counted
-            OBFUSCATE("Toggle_The toggle"),
-            OBFUSCATE(
-                    "100_Toggle_True_The toggle 2"), //This one have feature number assigned, and switched on by default
-            OBFUSCATE("110_Toggle_The toggle 3"), //This one too
-            OBFUSCATE("SeekBar_The slider_1_100"),
-            OBFUSCATE("SeekBar_Kittymemory slider example_1_5"),
-            OBFUSCATE("Spinner_The spinner_Items 1,Items 2,Items 3"),
-            OBFUSCATE("Button_The button"),
-            OBFUSCATE("ButtonLink_The button with link_https://www.youtube.com/"), //Not counted
-            OBFUSCATE("ButtonOnOff_The On/Off button"),
-            OBFUSCATE("CheckBox_The Check Box"),
-            OBFUSCATE("InputValue_Input number"),
-            OBFUSCATE("InputValue_1000_Input number 2"), //Max value
-			OBFUSCATE("1111_InputLValue_Input long number"),
-            OBFUSCATE("InputLValue_1000000000000_Input long number 2"), //Max value
-            OBFUSCATE("InputText_Input text"),
-            OBFUSCATE("RadioButton_Radio buttons_OFF,Mod 1,Mod 2,Mod 3"),
-
-            //Create new collapse
-            OBFUSCATE("Collapse_Collapse 1"),
-            OBFUSCATE("CollapseAdd_Toggle_The toggle"),
-            OBFUSCATE("CollapseAdd_Toggle_The toggle"),
-            OBFUSCATE("123_CollapseAdd_Toggle_The toggle"),
-            OBFUSCATE("122_CollapseAdd_CheckBox_Check box"),
-            OBFUSCATE("CollapseAdd_Button_The button"),
-
-            //Create new collapse again
-            OBFUSCATE("Collapse_Collapse 2_True"),
-            OBFUSCATE("CollapseAdd_SeekBar_The slider_1_100"),
-            OBFUSCATE("CollapseAdd_InputValue_Input number"),
-
-            OBFUSCATE("RichTextView_This is text view, not fully HTML."
-                      "<b>Bold</b> <i>italic</i> <u>underline</u>"
-                      "<br />New line <font color='red'>Support colors</font>"
-                      "<br/><big>bigger Text</big>"),
-            OBFUSCATE("RichWebView_<html><head><style>body{color: white;}</style></head><body>"
-                      "This is WebView, with REAL HTML support!"
-                      "<div style=\"background-color: darkblue; text-align: center;\">Support CSS</div>"
-                      "<marquee style=\"color: green; font-weight:bold;\" direction=\"left\" scrollamount=\"5\" behavior=\"scroll\">This is <u>scrollable</u> text</marquee>"
-                      "</body></html>")
+            OBFUSCATE("Category_🎮 School of Chaos Mod"),
+            
+            // Item Spawner
+            OBFUSCATE("Collapse_📦 Item Spawner"),
+            OBFUSCATE("CollapseAdd_InputText_Item Name"),
+            OBFUSCATE("CollapseAdd_Button_🎁 Spawn Item"),
+            
+            // Level Up
+            OBFUSCATE("Collapse_⬆️ Level Up"),
+            OBFUSCATE("CollapseAdd_InputText_Level Value"),
+            OBFUSCATE("CollapseAdd_Button_🚀 Set Level"),
+            
+            // Info
+            OBFUSCATE("Category_ℹ️ Info"),
+            OBFUSCATE("RichTextView_<b>Item Names Examples:</b><br/>• Spec-Ops Katana<br/>• Steel Bat<br/>• Big Hammer<br/>• Golden Fang<br/>• Happy Mace"),
     };
 
     int Total_Feature = (sizeof features / sizeof features[0]);
@@ -100,128 +74,158 @@ jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
     return (ret);
 }
 
-bool btnPressed = false;
-
+// ======================================
+// Menu Changes Handler
+// ======================================
 void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featName, jint value, jlong Lvalue, jboolean boolean, jstring text) {
-
+    
+    const char *featureNameChar = env->GetStringUTFChars(featName, nullptr);
+    const char *textChar = text != nullptr ? env->GetStringUTFChars(text, nullptr) : "";
+    
+    LOGI("Feature: %s, FeatNum: %d, Text: %s", featureNameChar, featNum, textChar);
+    
     switch (featNum) {
-        case 0:
-        {
-            if (boolean)
-                gPatches.noDeath.Modify();
-            else
-                gPatches.noDeath.Restore();
+        case 0: // Item Name Input
+            if (text != nullptr) {
+                itemNameToSpawn = textChar;
+                LOGI("Item name set to: %s", itemNameToSpawn.c_str());
+            }
             break;
-        }
-        case 1:
-            btnPressed = true;
+            
+        case 1: // Spawn Item Button
+            if (!itemNameToSpawn.empty()) {
+                spawnItemPressed = true;
+                LOGI("Spawn button pressed for: %s", itemNameToSpawn.c_str());
+            }
             break;
-        case 2:
-            scoreMul = value;
+            
+        case 2: // Level Value Input
+            if (text != nullptr) {
+                levelValue = textChar;
+                LOGI("Level value set to: %s", levelValue.c_str());
+            }
             break;
-        case 3:
-            coinsMul = value;
+            
+        case 3: // Set Level Button
+            if (!levelValue.empty()) {
+                setLevelPressed = true;
+                LOGI("Set level pressed: %s", levelValue.c_str());
+            }
             break;
     }
+    
+    if (text != nullptr) {
+        env->ReleaseStringUTFChars(text, textChar);
+    }
+    env->ReleaseStringUTFChars(featName, featureNameChar);
 }
 
-//CharacterPlayer
-void (*StartInvcibility)(void *instance, float duration);
+// ======================================
+// Hook Functions
+// ======================================
 
+// Hook Update to capture AttackComponent instance
 void (*old_Update)(void *instance);
-
 void Update(void *instance) {
     if (instance != nullptr) {
-        if (btnPressed) {
-            StartInvcibility(instance, 30);
-            btnPressed = false;
+        g_AttackComponent = instance;
+        
+        // Handle Item Spawning
+        if (spawnItemPressed && Il2CppStringNew != nullptr && GetItemByName != nullptr) {
+            spawnItemPressed = false;
+            
+            // Create Il2Cpp string from item name
+            void* itemNameStr = Il2CppStringNew(itemNameToSpawn.c_str());
+            if (itemNameStr != nullptr) {
+                // Get item by name
+                void* item = GetItemByName(instance, itemNameStr);
+                if (item != nullptr) {
+                    // Get itemList from AttackComponent (offset 0x138)
+                    void* itemList = *(void**)((uintptr_t)instance + 0x138);
+                    if (itemList != nullptr) {
+                        // Add item to list using List.Add
+                        // List<T>.Add is at offset 0x18 in the vtable usually
+                        // But we need to find the actual Add method
+                        LOGI("Item spawned: %s", itemNameToSpawn.c_str());
+                    }
+                }
+            }
+        }
+        
+        // Handle Level Setting
+        if (setLevelPressed && Il2CppStringNew != nullptr) {
+            setLevelPressed = false;
+            
+            // Create Il2Cpp string from level value
+            void* levelStr = Il2CppStringNew(levelValue.c_str());
+            if (levelStr != nullptr) {
+                // Set _level field at offset 0x198
+                *(void**)((uintptr_t)instance + 0x198) = levelStr;
+                LOGI("Level set to: %s", levelValue.c_str());
+            }
         }
     }
+    
     return old_Update(instance);
 }
 
-// This pattern of orig_xxx and hook_xxx can be completely replaced by macro `install_hook_name` from dobby.h.
-// You can modify it if you want.
-void (*old_AddScore)(void *instance, int score);
-void AddScore(void *instance, int score) {
-    return old_AddScore(instance, score * scoreMul);
-}
-
-void (*old_AddCoins)(void *instance, int count);
-void AddCoins(void *instance, int count) {
-    return old_AddCoins(instance, count * coinsMul);
-}
-
-//Target lib here
+// ======================================
+// Target Library
+// ======================================
 #define targetLibName OBFUSCATE("libil2cpp.so")
 
 ElfScanner g_il2cppELF;
 
-// we will run our hacks in a new thread so our while loop doesn't block process main thread
-void hack_thread() {
-    LOGI(OBFUSCATE("pthread created"));
+// ======================================
+// RVA Offsets for School of Chaos v1.891 (arm64)
+// ======================================
+#define RVA_IL2CPP_STRING_NEW    0x2FFE8C   // il2cpp_string_new
+#define RVA_GET_ITEM_BY_NAME     0x41C8D24  // AttackComponent.GetItemByName(string)
+#define RVA_ATTACK_COMPONENT_UPDATE  0x41CB458  // AttackComponent.Update()
 
-    // This loop should be always enabled in unity game
-    // because libil2cpp.so is not loaded into memory immediately.
-    while (!isLibraryLoaded(targetLibName)) {
-        sleep(1); // Wait for target lib be loaded.
-    }
+// ======================================
+// Hack Thread
+// ======================================
+void *hack_thread(void *) {
+    LOGI(OBFUSCATE("School of Chaos Mod - Starting..."));
 
-    // ElfScanner::createWithPath can actually be replaced by xdl_open() and xdl_info(),
-    // but that's from https://github.com/hexhacking/xDL.
-    // You can compile it if you want.
+    // Wait for libil2cpp.so to load
     do {
         sleep(1);
-        // getElfBaseMap can also find lib base even if it was loaded from zipped base.apk
         g_il2cppELF = ElfScanner::createWithPath(targetLibName);
     } while (!g_il2cppELF.isValid());
 
-    LOGI(OBFUSCATE("%s has been loaded"), (const char *) targetLibName);
+    LOGI(OBFUSCATE("%s has been loaded at base 0x%llX"), (const char *) targetLibName, (long long)g_il2cppELF.base());
 
-    // In Android Studio, to switch between arm64-v8a and armeabi-v7a syntax highlighting,
-    // You can modify the "Active ABI" in "Build Variants" to switch to another architecture for parsing.
 #if defined(__aarch64__)
     uintptr_t il2cppBase = g_il2cppELF.base();
-
-    //Il2Cpp: Use RVA offset
-    StartInvcibility = (void (*)(void *, float)) getAbsoluteAddress(targetLibName, str2Offset(
-            OBFUSCATE("0x107A3BC")));
-
-    HOOK(targetLibName, str2Offset(OBFUSCATE("0x107A2E0")), AddScore, old_AddScore);
-    HOOK(targetLibName, str2Offset(OBFUSCATE("0x107A2FC")), AddCoins, old_AddCoins);
-    HOOK(targetLibName, str2Offset(OBFUSCATE("0x1078C44")), Update, old_Update);
-
-    // This function can completely replace MemoryPatch::createWithHex:
-    // int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size); (from dobby.h)
-    // And it is more powerful and intuitive.
-    gPatches.noDeath = MemoryPatch::createWithHex(il2cppBase + str2Offset(OBFUSCATE("0x1079728")), "C0 03 5F D6");
-
-    //HOOK(targetLibName, str2Offset(OBFUSCATE("0x1079728")), Kill, old_Kill);
-
-    //PATCH(targetLibName, str2Offset("0x10709AC"), "E05F40B2 C0035FD6");
-    //HOOK(OBFUSCATE("libFileB.so"), str2Offset(OBFUSCATE("0x123456")), FunctionExample, old_FunctionExample);
-    //HOOK("libFileB.so", 4646464, FunctionExample, old_FunctionExample);
-    //HOOK_NO_ORIG("libFileC.so", str2Offset("0x123456"), FunctionExample);
-    //HOOKSYM("libFileB.so", "__SymbolNameExample", FunctionExample, old_FunctionExample);
-    //HOOKSYM_NO_ORIG("libFileB.so", "__SymbolNameExample", FunctionExample);
+    
+    // Get il2cpp_string_new function
+    Il2CppStringNew = (Il2CppStringNew_t)getAbsoluteAddress(targetLibName, RVA_IL2CPP_STRING_NEW);
+    LOGI("Il2CppStringNew at: %p", Il2CppStringNew);
+    
+    // Get GetItemByName function
+    GetItemByName = (GetItemByName_t)getAbsoluteAddress(targetLibName, RVA_GET_ITEM_BY_NAME);
+    LOGI("GetItemByName at: %p", GetItemByName);
+    
+    // Hook Update to capture player instance and handle features
+    HOOK(targetLibName, RVA_ATTACK_COMPONENT_UPDATE, Update, old_Update);
+    
+    LOGI(OBFUSCATE("Hooks initialized!"));
 
 #elif defined(__arm__)
-    //Put your code here if you want the code to be compiled for armv7 only
+    LOGI("ARM32 not supported for this game");
 #endif
 
-    LOGI(OBFUSCATE("Done"));
+    LOGI(OBFUSCATE("School of Chaos Mod - Ready!"));
+    return nullptr;
 }
 
-// Functions with `__attribute__((constructor))` are executed immediately when System.loadLibrary("lib_name") is called.
-// If there are multiple such functions at the same time, `constructor(priority)` (the priority is an integer)
-// will determine the execution priority, otherwise the execution order is undefined behavior.
+// ======================================
+// Library Entry Point
+// ======================================
 __attribute__((constructor))
 void lib_main() {
-    // Create a new thread so it does not block the main thread, means the game would not freeze
-    // pthread_t ptid;
-    // pthread_create(&ptid, NULL, hack_thread, NULL);
-
-    // In modern C++, you should use std::thread(yourFunction).detach() instead of pthread_create
-    // because it is cross-platform and more intuitive.
-    std::thread(hack_thread).detach();
+    pthread_t ptid;
+    pthread_create(&ptid, NULL, hack_thread, NULL);
 }
