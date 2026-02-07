@@ -240,11 +240,24 @@ void SmartFox_Send_Hook(void* smartFox, void* request) {
                     }
                 }
             }
-        } else if (requestId == 7) { // GENERIC_MESSAGE - might contain chat
-            // Log occasionally to avoid spam
-            static int genericCount = 0;
-            if (genericCount++ % 50 == 0) {
-                LOGI("=== GENERIC_MESSAGE (count: %d) ===", genericCount);
+        } else if (requestId == 7) { // GENERIC_MESSAGE - chat messages!
+            // GenericMessageRequest: type at 0x24, room at 0x28, message at 0x30
+            void* messageStr = *(void**)((uintptr_t)request + 0x30);
+            if (messageStr != nullptr) {
+                int strLen = *(int*)((uintptr_t)messageStr + 0x10);
+                if (strLen > 0 && strLen < 512) {
+                    char16_t* chars = (char16_t*)((uintptr_t)messageStr + 0x14);
+                    char msgBuf[513] = {0};
+                    for (int i = 0; i < strLen && i < 512; i++) {
+                        msgBuf[i] = (char)chars[i];
+                    }
+                    LOGI("=== CHAT MESSAGE: '%s' ===", msgBuf);
+                    
+                    // Check if it's a command (starts with /)
+                    if (msgBuf[0] == '/') {
+                        LOGI(">>> COMMAND DETECTED! <<<");
+                    }
+                }
             }
         } else if (requestId != 12) { // Skip JoinRoom spam (ID 12)
             LOGI("=== Request ID: %d ===", requestId);
