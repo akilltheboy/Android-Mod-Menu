@@ -401,10 +401,18 @@ void Update(void *instance) {
             LOGI("=== END LEVEL ===");
         }
         
-        // Handle List All Items
+        // Handle List All Items - Save to file
         if (listItemsPressed && il2cpp_domain_get != nullptr) {
             listItemsPressed = false;
             LOGI("=== LISTING ALL ITEMS ===");
+            
+            // Open file for writing
+            FILE* itemsFile = fopen("/sdcard/items.txt", "w");
+            if (itemsFile == nullptr) {
+                LOGI("ERROR: Cannot create /sdcard/items.txt!");
+                LOGI("Try: /data/local/tmp/items.txt instead");
+                itemsFile = fopen("/data/local/tmp/items.txt", "w");
+            }
             
             void* domain = il2cpp_domain_get();
             if (domain != nullptr) {
@@ -423,9 +431,46 @@ void Update(void *instance) {
                                     void* itemsArray = FindObjectsOfTypeAll(typeObject);
                                     if (itemsArray != nullptr) {
                                         int count = *(int*)((uintptr_t)itemsArray + 0x18);
+                                        void** items = (void**)((uintptr_t)itemsArray + 0x20);
+                                        
                                         LOGI("=== TOTAL ITEMS LOADED: %d ===", count);
-                                        LOGI("Use exact item names from the game!");
-                                        LOGI("Example names: VIP Token, Energy Drink, Apple");
+                                        
+                                        if (itemsFile) {
+                                            fprintf(itemsFile, "=== School of Chaos Items (%d total) ===\n\n", count);
+                                        }
+                                        
+                                        for (int idx = 0; idx < count; idx++) {
+                                            void* item = items[idx];
+                                            if (item != nullptr) {
+                                                // Get item name from offset 0x30
+                                                void* namePtr = *(void**)((uintptr_t)item + 0x30);
+                                                if (namePtr != nullptr) {
+                                                    // Il2CppString: length at 0x10, chars at 0x14
+                                                    int nameLen = *(int*)((uintptr_t)namePtr + 0x10);
+                                                    if (nameLen > 0 && nameLen < 200) {
+                                                        char16_t* nameChars = (char16_t*)((uintptr_t)namePtr + 0x14);
+                                                        // Convert to ASCII
+                                                        char nameBuffer[256] = {0};
+                                                        for (int c = 0; c < nameLen && c < 255; c++) {
+                                                            nameBuffer[c] = (char)(nameChars[c] & 0xFF);
+                                                        }
+                                                        
+                                                        if (itemsFile) {
+                                                            fprintf(itemsFile, "%d. %s\n", idx + 1, nameBuffer);
+                                                        }
+                                                        
+                                                        // Log first 20 items to logcat too
+                                                        if (idx < 20) {
+                                                            LOGI("[%d] %s", idx, nameBuffer);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        if (itemsFile) {
+                                            LOGI("=== Items saved to /sdcard/items.txt ===");
+                                        }
                                     }
                                 }
                             }
@@ -433,6 +478,10 @@ void Update(void *instance) {
                         }
                     }
                 }
+            }
+            
+            if (itemsFile) {
+                fclose(itemsFile);
             }
             LOGI("=== END ITEM LIST ===");
         }
