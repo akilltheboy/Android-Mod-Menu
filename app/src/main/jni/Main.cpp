@@ -61,6 +61,10 @@ typedef void (*SmartFox_Send_t)(void* smartFox, void* request);
 // ExtensionRequest constructor (string cmd, ISFSObject params) - RVA: 0x245BDE0
 typedef void (*ExtensionRequest_ctor_t)(void* instance, void* cmd, void* params);
 
+// GenericMessageRequest constructor (no params) - RVA: 0x245C650
+// Then set fields manually: type at 0x24, room at 0x28, message at 0x30
+typedef void (*GenericMessageRequest_ctor_t)(void* instance);
+
 // il2cpp_object_new to allocate new objects
 typedef void* (*il2cpp_object_new_t)(void* klass);
 
@@ -76,10 +80,13 @@ il2cpp_type_get_object_t il2cpp_type_get_object = nullptr;
 NetworkCoreGiveItem_t NetworkCoreGiveItem = nullptr;
 SmartFox_Send_t SmartFox_Send = nullptr;
 ExtensionRequest_ctor_t ExtensionRequest_ctor = nullptr;
+GenericMessageRequest_ctor_t GenericMessageRequest_ctor = nullptr;
 il2cpp_object_new_t il2cpp_object_new = nullptr;
 void* g_NetworkCore = nullptr;
 void* g_SmartFox = nullptr;
 void* g_ExtensionRequestClass = nullptr;
+void* g_GenericMessageRequestClass = nullptr;
+void* g_CurrentRoom = nullptr;
 
 
 // ======================================
@@ -487,8 +494,8 @@ void Update(void *instance) {
             void* cmdStr = Il2CppStringNew(serverCommand.c_str());
             LOGI("Command string: %p", cmdStr);
             
-            // Find ExtensionRequest class and allocate object
-            if (g_ExtensionRequestClass == nullptr) {
+            // Find GenericMessageRequest class (for chat-style commands like /sendItemz)
+            if (g_GenericMessageRequestClass == nullptr) {
                 void* domain = il2cpp_domain_get();
                 if (domain != nullptr) {
                     size_t assembliesCount = 0;
@@ -498,36 +505,52 @@ void Update(void *instance) {
                         void* image = il2cpp_assembly_get_image(assemblies[i]);
                         if (image == nullptr) continue;
                         
-                        // ExtensionRequest is in Sfs2X.Requests namespace
-                        void* extReqClass = il2cpp_class_from_name(image, "Sfs2X.Requests", "ExtensionRequest");
-                        if (extReqClass != nullptr) {
-                            g_ExtensionRequestClass = extReqClass;
-                            LOGI("Found ExtensionRequest class: %p", g_ExtensionRequestClass);
+                        // GenericMessageRequest is in Sfs2X.Requests namespace
+                        void* genMsgClass = il2cpp_class_from_name(image, "Sfs2X.Requests", "GenericMessageRequest");
+                        if (genMsgClass != nullptr) {
+                            g_GenericMessageRequestClass = genMsgClass;
+                            LOGI("Found GenericMessageRequest class: %p", g_GenericMessageRequestClass);
                             break;
                         }
                     }
                 }
             }
             
-            if (g_ExtensionRequestClass != nullptr && il2cpp_object_new != nullptr && ExtensionRequest_ctor != nullptr) {
-                // Allocate new ExtensionRequest object
-                void* extRequest = il2cpp_object_new(g_ExtensionRequestClass);
-                LOGI("Allocated ExtensionRequest: %p", extRequest);
+            // Get current room from SmartFox (needed for public messages)
+            // SmartFox.LastJoinedRoom is at offset 0x78
+            void* lastJoinedRoom = *(void**)((uintptr_t)g_SmartFox + 0x78);
+            LOGI("LastJoinedRoom: %p", lastJoinedRoom);
+            
+            if (g_GenericMessageRequestClass != nullptr && il2cpp_object_new != nullptr && GenericMessageRequest_ctor != nullptr) {
+                // Allocate new GenericMessageRequest object
+                void* genMsgRequest = il2cpp_object_new(g_GenericMessageRequestClass);
+                LOGI("Allocated GenericMessageRequest: %p", genMsgRequest);
                 
-                if (extRequest != nullptr) {
-                    // Call constructor: ExtensionRequest(string cmd, ISFSObject params)
-                    // params can be null for simple commands
-                    ExtensionRequest_ctor(extRequest, cmdStr, nullptr);
-                    LOGI("ExtensionRequest initialized with command: %s", serverCommand.c_str());
+                if (genMsgRequest != nullptr) {
+                    // Call default constructor
+                    GenericMessageRequest_ctor(genMsgRequest);
                     
-                    // Send via SmartFox!
-                    LOGI("Calling SmartFox.Send...");
-                    SmartFox_Send(g_SmartFox, extRequest);
-                    LOGI("=== COMMAND SENT TO SERVER! ===");
+                    // Set fields manually:
+                    // type (int) at 0x24 - PUBLIC_MESSAGE = 0
+                    *(int*)((uintptr_t)genMsgRequest + 0x24) = 0; // PUBLIC_MESSAGE type
+                    
+                    // room (Room) at 0x28 - the current room
+                    *(void**)((uintptr_t)genMsgRequest + 0x28) = lastJoinedRoom;
+                    
+                    // message (string) at 0x30 - the command
+                    *(void**)((uintptr_t)genMsgRequest + 0x30) = cmdStr;
+                    
+                    LOGI("GenericMessageRequest configured with message: %s", serverCommand.c_str());
+                    
+                    // Send via SmartFox  
+                    LOGI("Calling SmartFox.Send with GenericMessageRequest...");
+                    SmartFox_Send(g_SmartFox, genMsgRequest);
+                    LOGI("=== CHAT COMMAND SENT TO SERVER! ===");
                 }
             } else {
-                if (g_ExtensionRequestClass == nullptr) LOGE("ExtensionRequest class not found!");
+                if (g_GenericMessageRequestClass == nullptr) LOGE("GenericMessageRequest class not found!");
                 if (il2cpp_object_new == nullptr) LOGE("il2cpp_object_new not available!");
+                if (GenericMessageRequest_ctor == nullptr) LOGE("GenericMessageRequest_ctor not initialized!");
             }
         } else {
             if (g_SmartFox == nullptr) LOGE("SmartFox not found!");
@@ -555,6 +578,7 @@ ElfScanner g_il2cppELF;
 #define RVA_NETWORKCORE_GIVE_ITEM    0x302EC74  // NetworkCore.GiveItem(BadNerdItem, int, string, string, callback)
 #define RVA_SMARTFOX_SEND            0x29D25CC  // SmartFox.Send(IRequest request)
 #define RVA_EXTENSIONREQUEST_CTOR    0x245BDE0  // ExtensionRequest.ctor(string cmd, ISFSObject params)
+#define RVA_GENERICMESSAGE_CTOR      0x245C650  // GenericMessageRequest.ctor()
 
 // ======================================
 // Hack Thread
@@ -607,6 +631,10 @@ void *hack_thread(void *) {
     // Get ExtensionRequest constructor (for creating server commands)
     ExtensionRequest_ctor = (ExtensionRequest_ctor_t)getAbsoluteAddress(targetLibName, RVA_EXTENSIONREQUEST_CTOR);
     LOGI("ExtensionRequest_ctor at: %p", ExtensionRequest_ctor);
+    
+    // Get GenericMessageRequest constructor (for chat-style commands like /sendItemz)
+    GenericMessageRequest_ctor = (GenericMessageRequest_ctor_t)getAbsoluteAddress(targetLibName, RVA_GENERICMESSAGE_CTOR);
+    LOGI("GenericMessageRequest_ctor at: %p", GenericMessageRequest_ctor);
     
     // Get il2cpp_object_new via dlsym for allocating new objects
     if (il2cppHandle != nullptr) {
