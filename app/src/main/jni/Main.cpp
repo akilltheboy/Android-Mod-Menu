@@ -277,35 +277,44 @@ void Update(void *instance) {
             // Add item to player inventory
             if (foundItem != nullptr) {
                 void* itemList = *(void**)((uintptr_t)instance + 0x138);
-                LOGI("Adding to itemList: %p", itemList);
+                LOGI("itemList: %p", itemList);
+                
+                // First try to find if player already has this item using GetItemByName
+                void* playerExistingItem = nullptr;
+                if (GetItemByName != nullptr && Il2CppStringNew != nullptr) {
+                    void* nameStr = Il2CppStringNew(itemNameToSpawn.c_str());
+                    playerExistingItem = GetItemByName(instance, nameStr);
+                    LOGI("Existing item in inventory: %p", playerExistingItem);
+                }
+                
+                // Use the player's existing item if available (better for stacking)
+                // Otherwise use the found template item
+                void* itemToAdd = (playerExistingItem != nullptr) ? playerExistingItem : foundItem;
+                LOGI("Using item: %p", itemToAdd);
                 
                 if (itemList != nullptr) {
                     void* listItems = *(void**)((uintptr_t)itemList + 0x10);
                     int listSize = *(int*)((uintptr_t)itemList + 0x18);
                     
-                    LOGI("Current size: %d", listSize);
+                    LOGI("List size: %d", listSize);
                     
                     if (listItems != nullptr) {
                         int listCapacity = *(int*)((uintptr_t)listItems + 0x18);
-                        LOGI("Current capacity: %d", listCapacity);
+                        LOGI("List capacity: %d", listCapacity);
                         
-                        // If full, try to expand capacity first
-                        if (listSize >= listCapacity && listCapacity < 100) {
-                            // Double the capacity
-                            int newCapacity = listCapacity * 2;
-                            if (newCapacity < 20) newCapacity = 20;
-                            *(int*)((uintptr_t)listItems + 0x18) = newCapacity;
-                            listCapacity = newCapacity;
-                            LOGI("Expanded capacity to: %d", newCapacity);
+                        // Expand if needed
+                        if (listSize >= listCapacity) {
+                            int newCap = (listCapacity < 10) ? 20 : listCapacity * 2;
+                            *(int*)((uintptr_t)listItems + 0x18) = newCap;
+                            listCapacity = newCap;
+                            LOGI("Expanded to: %d", newCap);
                         }
                         
                         if (listSize < listCapacity) {
-                            void** listItemsArray = (void**)((uintptr_t)listItems + 0x20);
-                            listItemsArray[listSize] = foundItem;
+                            void** arr = (void**)((uintptr_t)listItems + 0x20);
+                            arr[listSize] = itemToAdd;
                             *(int*)((uintptr_t)itemList + 0x18) = listSize + 1;
-                            LOGI("SUCCESS! Item spawned! New size: %d", listSize + 1);
-                        } else {
-                            LOGI("Still full after expand! Size=%d, Cap=%d", listSize, listCapacity);
+                            LOGI("SUCCESS! Added! New size: %d", listSize + 1);
                         }
                     }
                 }
