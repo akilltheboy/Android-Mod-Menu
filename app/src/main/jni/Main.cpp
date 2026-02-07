@@ -28,6 +28,8 @@ std::string levelValue = "";
 bool spawnItemPressed = false;
 bool setLevelPressed = false;
 bool listItemsPressed = false;
+bool sendCommandPressed = false;
+std::string serverCommand = "";
 void* g_AttackComponent = nullptr;
 void* g_AllItemsArray = nullptr;
 int g_AllItemsCount = 0;
@@ -52,6 +54,16 @@ typedef void* (*il2cpp_type_get_object_t)(void* type);
 // Signature: void NetworkCore.GiveItem(BadNerdItem item, int count, string sender, string message, Callback callback)
 typedef void (*NetworkCoreGiveItem_t)(void* networkCore, void* badNerdItem, int count, void* senderName, void* message, void* callback);
 
+// SmartFoxServer2X - Direct server communication
+// SmartFox.Send(IRequest request) - RVA: 0x29D25CC
+typedef void (*SmartFox_Send_t)(void* smartFox, void* request);
+
+// ExtensionRequest constructor (string cmd, ISFSObject params) - RVA: 0x245BDE0
+typedef void (*ExtensionRequest_ctor_t)(void* instance, void* cmd, void* params);
+
+// il2cpp_object_new to allocate new objects
+typedef void* (*il2cpp_object_new_t)(void* klass);
+
 Il2CppStringNew_t Il2CppStringNew = nullptr;
 GetItemByName_t GetItemByName = nullptr;
 FindObjectsOfTypeAll_t FindObjectsOfTypeAll = nullptr;
@@ -62,7 +74,12 @@ il2cpp_domain_get_assemblies_t il2cpp_domain_get_assemblies = nullptr;
 il2cpp_assembly_get_image_t il2cpp_assembly_get_image = nullptr;
 il2cpp_type_get_object_t il2cpp_type_get_object = nullptr;
 NetworkCoreGiveItem_t NetworkCoreGiveItem = nullptr;
+SmartFox_Send_t SmartFox_Send = nullptr;
+ExtensionRequest_ctor_t ExtensionRequest_ctor = nullptr;
+il2cpp_object_new_t il2cpp_object_new = nullptr;
 void* g_NetworkCore = nullptr;
+void* g_SmartFox = nullptr;
+void* g_ExtensionRequestClass = nullptr;
 
 
 // ======================================
@@ -85,9 +102,14 @@ jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
             OBFUSCATE("CollapseAdd_InputText_Level Value"),
             OBFUSCATE("CollapseAdd_Button_🚀 Set Level"),
             
+            // Server Console - Direct server communication!
+            OBFUSCATE("Collapse_🌐 Server Console"),
+            OBFUSCATE("CollapseAdd_InputText_Server Command"),
+            OBFUSCATE("CollapseAdd_Button_📡 Send Command"),
+            
             // Info
             OBFUSCATE("Category_ℹ️ Info"),
-            OBFUSCATE("RichTextView_<b>Check logcat for items!</b>"),
+            OBFUSCATE("RichTextView_<b>Use /sendItemz [item] to spawn!</b>"),
     };
 
     int Total_Feature = (sizeof features / sizeof features[0]);
@@ -142,6 +164,20 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
             if (!levelValue.empty()) {
                 setLevelPressed = true;
                 LOGI("Set level pressed: %s", levelValue.c_str());
+            }
+            break;
+            
+        case 5: // Server Command Input
+            if (text != nullptr && strlen(textChar) > 0) {
+                serverCommand = textChar;
+                LOGI("Server command set to: %s", serverCommand.c_str());
+            }
+            break;
+            
+        case 6: // Send Command Button
+            if (!serverCommand.empty()) {
+                sendCommandPressed = true;
+                LOGI("Send command pressed: %s", serverCommand.c_str());
             }
             break;
     }
@@ -319,6 +355,80 @@ void Update(void *instance) {
         }
     }
     
+    // Handle Send Command - Direct server communication via SmartFox
+    if (sendCommandPressed) {
+        sendCommandPressed = false;
+        LOGI("=== SENDING SERVER COMMAND ===");
+        LOGI("Command: %s", serverCommand.c_str());
+        
+        // First, we need to find NetworkCore and get SmartFox from it
+        if (g_SmartFox == nullptr && il2cpp_domain_get != nullptr) {
+            // Try to find NetworkCore instance
+            void* domain = il2cpp_domain_get();
+            if (domain != nullptr) {
+                size_t assembliesCount = 0;
+                void** assemblies = il2cpp_domain_get_assemblies(domain, &assembliesCount);
+                
+                for (size_t i = 0; i < assembliesCount; i++) {
+                    void* image = il2cpp_assembly_get_image(assemblies[i]);
+                    if (image == nullptr) continue;
+                    
+                    void* networkCoreClass = il2cpp_class_from_name(image, "", "NetworkCore");
+                    if (networkCoreClass != nullptr) {
+                        LOGI("Found NetworkCore class: %p", networkCoreClass);
+                        
+                        // Get type and find instances
+                        void* type = il2cpp_class_get_type(networkCoreClass);
+                        if (type != nullptr && FindObjectsOfTypeAll != nullptr) {
+                            void* typeObject = il2cpp_type_get_object(type);
+                            if (typeObject != nullptr) {
+                                void* instancesArray = FindObjectsOfTypeAll(typeObject);
+                                if (instancesArray != nullptr) {
+                                    int count = *(int*)((uintptr_t)instancesArray + 0x18);
+                                    if (count > 0) {
+                                        void** instances = (void**)((uintptr_t)instancesArray + 0x20);
+                                        g_NetworkCore = instances[0];
+                                        LOGI("NetworkCore instance: %p", g_NetworkCore);
+                                        
+                                        // SmartFox is at offset 0xA8 in NetworkCore
+                                        g_SmartFox = *(void**)((uintptr_t)g_NetworkCore + 0xA8);
+                                        LOGI("SmartFox instance: %p", g_SmartFox);
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Now try to send the command
+        if (g_SmartFox != nullptr && SmartFox_Send != nullptr && Il2CppStringNew != nullptr) {
+            LOGI("Attempting to send command via SmartFox...");
+            
+            // Create command string
+            void* cmdStr = Il2CppStringNew(serverCommand.c_str());
+            LOGI("Command string: %p", cmdStr);
+            
+            // Note: We need to create ExtensionRequest object
+            // For now, just log that we have SmartFox ready
+            LOGI("SmartFox ready at: %p", g_SmartFox);
+            LOGI("SmartFox_Send ready at: %p", SmartFox_Send);
+            LOGI("ExtensionRequest_ctor ready at: %p", ExtensionRequest_ctor);
+            
+            // TODO: Need to allocate ExtensionRequest and call constructor
+            // Then call SmartFox.Send(request)
+            
+            LOGI("Command infrastructure ready! Need ExtensionRequest allocation.");
+        } else {
+            if (g_SmartFox == nullptr) LOGE("SmartFox not found!");
+            if (SmartFox_Send == nullptr) LOGE("SmartFox_Send not initialized!");
+        }
+        
+        LOGI("=== END SEND COMMAND ===");
+    }
+    
     return old_Update(instance);
 }
 
@@ -335,6 +445,8 @@ ElfScanner g_il2cppELF;
 #define RVA_GET_ITEM_BY_NAME     0x41C8D24  // AttackComponent.GetItemByName(string)
 #define RVA_ATTACK_COMPONENT_UPDATE  0x41CB458  // AttackComponent.Update()
 #define RVA_NETWORKCORE_GIVE_ITEM    0x302EC74  // NetworkCore.GiveItem(BadNerdItem, int, string, string, callback)
+#define RVA_SMARTFOX_SEND            0x29D25CC  // SmartFox.Send(IRequest request)
+#define RVA_EXTENSIONREQUEST_CTOR    0x245BDE0  // ExtensionRequest.ctor(string cmd, ISFSObject params)
 
 // ======================================
 // Hack Thread
@@ -379,6 +491,20 @@ void *hack_thread(void *) {
     // Get NetworkCore.GiveItemByName function (for server-side item spawning)
     NetworkCoreGiveItem = (NetworkCoreGiveItem_t)getAbsoluteAddress(targetLibName, RVA_NETWORKCORE_GIVE_ITEM);
     LOGI("NetworkCoreGiveItem at: %p", NetworkCoreGiveItem);
+    
+    // Get SmartFox.Send function (for direct server communication)
+    SmartFox_Send = (SmartFox_Send_t)getAbsoluteAddress(targetLibName, RVA_SMARTFOX_SEND);
+    LOGI("SmartFox_Send at: %p", SmartFox_Send);
+    
+    // Get ExtensionRequest constructor (for creating server commands)
+    ExtensionRequest_ctor = (ExtensionRequest_ctor_t)getAbsoluteAddress(targetLibName, RVA_EXTENSIONREQUEST_CTOR);
+    LOGI("ExtensionRequest_ctor at: %p", ExtensionRequest_ctor);
+    
+    // Get il2cpp_object_new via dlsym for allocating new objects
+    if (il2cppHandle != nullptr) {
+        il2cpp_object_new = (il2cpp_object_new_t)dlsym(il2cppHandle, "il2cpp_object_new");
+        LOGI("il2cpp_object_new at: %p", il2cpp_object_new);
+    }
     
     // Hook Update
     HOOK(targetLibName, RVA_ATTACK_COMPONENT_UPDATE, Update, old_Update);
