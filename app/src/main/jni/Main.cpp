@@ -304,36 +304,9 @@ void Update(void *instance) {
                                     void* itemsArray = FindObjectsOfTypeAll(typeObject);
                                     if (itemsArray != nullptr) {
                                         int count = *(int*)((uintptr_t)itemsArray + 0x18);
-                                        void** allItems = (void**)((uintptr_t)itemsArray + 0x20);
-                                        
-                                        LOGI("=== TOTAL ITEMS: %d ===", count);
-                                        
-                                        // Debug first 5 items to find the right offset
-                                        for (int j = 0; j < 5 && j < count; j++) {
-                                            void* item = allItems[j];
-                                            if (item == nullptr) {
-                                                LOGI("[%d] null item", j);
-                                                continue;
-                                            }
-                                            LOGI("[%d] item at %p", j, item);
-                                            
-                                            // Try many offsets
-                                            for (int off = 0x10; off <= 0x60; off += 0x8) {
-                                                void* ptr = *(void**)((uintptr_t)item + off);
-                                                if (ptr == nullptr) continue;
-                                                
-                                                // Check if it's a valid Il2CppString
-                                                int len = *(int*)((uintptr_t)ptr + 0x10);
-                                                if (len > 0 && len < 64) {
-                                                    char16_t* chars = (char16_t*)((uintptr_t)ptr + 0x14);
-                                                    char name[64] = {0};
-                                                    for (int k = 0; k < len && k < 63; k++) {
-                                                        name[k] = (char)chars[k];
-                                                    }
-                                                    LOGI("  [0x%X] = %s", off, name);
-                                                }
-                                            }
-                                        }
+                                        LOGI("=== TOTAL ITEMS LOADED: %d ===", count);
+                                        LOGI("Use exact item names from the game!");
+                                        LOGI("Example names: VIP Token, Energy Drink, Apple");
                                     }
                                 }
                             }
