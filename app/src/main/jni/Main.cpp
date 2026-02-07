@@ -192,53 +192,62 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
 // Hook Functions
 // ======================================
 
+// Function pointer for SFSObject.Dump() - RVA: 0x2476F10
+typedef void* (*SFSObject_Dump_t)(void* sfsObject);
+SFSObject_Dump_t SFSObject_Dump = nullptr;
+
 // Hook SmartFox.Send to intercept ALL server requests
 void (*old_SmartFox_Send)(void* smartFox, void* request);
 void SmartFox_Send_Hook(void* smartFox, void* request) {
-    LOGI("=== SmartFox.Send INTERCEPTED ===");
     
     if (request != nullptr) {
-        // Get the class pointer (first field of Il2CppObject)
-        void* klass = *(void**)request;
-        LOGI("Request class ptr: %p", klass);
-        
-        // BaseRequest.id is at offset 0x18 (int), not 0x10
-        // BaseRequest.targetController is at offset 0x1C
+        // BaseRequest.id is at offset 0x18 (int)
         int requestId = *(int*)((uintptr_t)request + 0x18);
-        int targetController = *(int*)((uintptr_t)request + 0x1C);
-        LOGI("Request ID: %d, Controller: %d", requestId, targetController);
         
-        // Try to read extCmd for ExtensionRequest
-        // ExtensionRequest extends BaseRequest
-        // From dump: extCmd is the first field after BaseRequest at 0x20 or 0x28
-        void* possibleExtCmd = *(void**)((uintptr_t)request + 0x28);
-        if (possibleExtCmd != nullptr) {
-            // Check if it looks like a valid Il2CppString
-            void* strKlass = *(void**)possibleExtCmd;
-            if (strKlass != nullptr) {
-                int strLen = *(int*)((uintptr_t)possibleExtCmd + 0x10);
+        // Only log interesting requests (not the constant "c" spam)
+        // ExtensionRequest: extCmd at 0x28, parameters at 0x30
+        if (requestId == 13) { // CALL_EXTENSION
+            void* extCmdStr = *(void**)((uintptr_t)request + 0x28);
+            if (extCmdStr != nullptr) {
+                int strLen = *(int*)((uintptr_t)extCmdStr + 0x10);
                 if (strLen > 0 && strLen < 256) {
-                    char16_t* chars = (char16_t*)((uintptr_t)possibleExtCmd + 0x14);
+                    char16_t* chars = (char16_t*)((uintptr_t)extCmdStr + 0x14);
                     char cmdBuf[257] = {0};
                     for (int i = 0; i < strLen && i < 256; i++) {
                         cmdBuf[i] = (char)chars[i];
                     }
-                    LOGI("ExtCmd/Data: %s", cmdBuf);
+                    
+                    // Skip the constant "c" and "z" spam, only log interesting commands
+                    if (cmdBuf[0] != 'c' && cmdBuf[0] != 'z') {
+                        LOGI("=== EXTENSION REQUEST: cmd='%s' ===", cmdBuf);
+                        
+                        // Try to dump the ISFSObject parameters
+                        void* params = *(void**)((uintptr_t)request + 0x30);
+                        if (params != nullptr && SFSObject_Dump != nullptr) {
+                            void* dumpStr = SFSObject_Dump(params);
+                            if (dumpStr != nullptr) {
+                                int dumpLen = *(int*)((uintptr_t)dumpStr + 0x10);
+                                if (dumpLen > 0 && dumpLen < 2048) {
+                                    char16_t* dumpChars = (char16_t*)((uintptr_t)dumpStr + 0x14);
+                                    char dumpBuf[2049] = {0};
+                                    for (int i = 0; i < dumpLen && i < 2048; i++) {
+                                        dumpBuf[i] = (char)dumpChars[i];
+                                    }
+                                    LOGI("Params: %s", dumpBuf);
+                                }
+                            }
+                        }
+                    }
                 }
             }
-        }
-        
-        // Log known request types
-        // From dump: Handshake=0, Login=1, GenericMessage=7, CallExtension=13, PublicMessage=20
-        switch(requestId) {
-            case 0: LOGI(">>> HANDSHAKE <<<"); break;
-            case 1: LOGI(">>> LOGIN <<<"); break;
-            case 2: LOGI(">>> LOGOUT <<<"); break;
-            case 7: LOGI(">>> GENERIC_MESSAGE (Chat?) <<<"); break;
-            case 13: LOGI(">>> CALL_EXTENSION <<<"); break;
-            case 20: LOGI(">>> PUBLIC_MESSAGE <<<"); break;
-            case 21: LOGI(">>> PRIVATE_MESSAGE <<<"); break;
-            default: break; // Don't spam for unknown
+        } else if (requestId == 7) { // GENERIC_MESSAGE - might contain chat
+            // Log occasionally to avoid spam
+            static int genericCount = 0;
+            if (genericCount++ % 50 == 0) {
+                LOGI("=== GENERIC_MESSAGE (count: %d) ===", genericCount);
+            }
+        } else if (requestId != 12) { // Skip JoinRoom spam (ID 12)
+            LOGI("=== Request ID: %d ===", requestId);
         }
     }
     
@@ -591,6 +600,10 @@ void *hack_thread(void *) {
         il2cpp_object_new = (il2cpp_object_new_t)dlsym(il2cppHandle, "il2cpp_object_new");
         LOGI("il2cpp_object_new at: %p", il2cpp_object_new);
     }
+    
+    // Get SFSObject.Dump for debugging request parameters
+    SFSObject_Dump = (SFSObject_Dump_t)getAbsoluteAddress(targetLibName, 0x2476F10);
+    LOGI("SFSObject_Dump at: %p", SFSObject_Dump);
     
     // Hook SmartFox.Send to intercept ALL requests!
     HOOK(targetLibName, RVA_SMARTFOX_SEND, SmartFox_Send_Hook, old_SmartFox_Send);
