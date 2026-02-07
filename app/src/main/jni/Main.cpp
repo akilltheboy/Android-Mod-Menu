@@ -128,104 +128,63 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
 void (*old_Update)(void *instance);
 void Update(void *instance) {
     if (instance != nullptr) {
-        // Save the instance (this is PlayerAttackComponent extending AttackComponent)
+        // Save the instance
         if (g_AttackComponent == nullptr) {
             g_AttackComponent = instance;
             LOGI("PlayerAttackComponent captured: %p", instance);
-            
-            // Log the master item array info
-            void* masterItemArray = *(void**)((uintptr_t)instance + 0x6A0);
-            if (masterItemArray != nullptr) {
-                int arrayLength = *(int*)((uintptr_t)masterItemArray + 0x18);
-                LOGI("Master Item Array: %p, Length: %d", masterItemArray, arrayLength);
-            }
         }
         
-        // Handle Item Spawning - NEW IMPLEMENTATION
+        // Handle Item Spawning - DUPLICATION APPROACH
         if (spawnItemPressed) {
             spawnItemPressed = false;
-            LOGI("=== SPAWNING ITEM (NEW) ===");
+            LOGI("=== ITEM DUPLICATION ===");
             LOGI("Target item: %s", itemNameToSpawn.c_str());
             
-            // Get master item array at offset 0x6A0 (PlayerAttackComponent)
-            void* masterItemArray = *(void**)((uintptr_t)instance + 0x6A0);
-            LOGI("Master Array: %p", masterItemArray);
-            
-            if (masterItemArray != nullptr) {
-                // Il2Cpp Array: [0x18] = length, [0x20] = first element
-                int arrayLength = *(int*)((uintptr_t)masterItemArray + 0x18);
-                void** items = (void**)((uintptr_t)masterItemArray + 0x20);
-                LOGI("Array length: %d", arrayLength);
+            // First, find the item in current inventory
+            if (Il2CppStringNew != nullptr && GetItemByName != nullptr) {
+                void* nameStr = Il2CppStringNew(itemNameToSpawn.c_str());
+                void* foundItem = GetItemByName(instance, nameStr);
                 
-                void* foundItem = nullptr;
+                LOGI("GetItemByName result: %p", foundItem);
                 
-                // Search for item by name
-                for (int i = 0; i < arrayLength && i < 500; i++) {
-                    void* item = items[i];
-                    if (item == nullptr) continue;
-                    
-                    // Get item's GameObject name using Unity's Object.name
-                    // MonoBehaviour has Component base which has gameObject
-                    // Try to get name via ToString or similar
-                    
-                    // For now, try using GetItemByName to see if this item matches
-                    if (Il2CppStringNew != nullptr && GetItemByName != nullptr) {
-                        // Try to match - this is a workaround
-                        void* nameStr = Il2CppStringNew(itemNameToSpawn.c_str());
-                        void* matchedItem = GetItemByName(instance, nameStr);
-                        
-                        if (matchedItem != nullptr) {
-                            // We found the item in inventory, now get its template from master array
-                            // by comparing at same index range
-                            foundItem = item;
-                            LOGI("Found potential match at index %d: %p", i, item);
-                            break;
-                        }
-                    }
-                }
-                
-                // Alternative: Search master array and compare first few chars
-                if (foundItem == nullptr) {
-                    LOGI("Searching master array by first item...");
-                    // Just log first 10 items for debugging
-                    for (int i = 0; i < 10 && i < arrayLength; i++) {
-                        void* item = items[i];
-                        if (item != nullptr) {
-                            LOGI("Item[%d]: %p", i, item);
-                        }
-                    }
-                }
-                
-                // Try to add item to inventory list
                 if (foundItem != nullptr) {
+                    // Found the item! Now add it to inventory list
                     void* itemList = *(void**)((uintptr_t)instance + 0x138);
-                    LOGI("Adding to itemList: %p", itemList);
+                    LOGI("itemList: %p", itemList);
                     
                     if (itemList != nullptr) {
-                        // Il2Cpp List: [0x10] = _items array, [0x18] = _size
+                        // Il2Cpp List<T>: 
+                        // [0x10] = _items (array)
+                        // [0x18] = _size
                         void* listItems = *(void**)((uintptr_t)itemList + 0x10);
                         int listSize = *(int*)((uintptr_t)itemList + 0x18);
-                        int listCapacity = 0;
+                        
+                        LOGI("List _items: %p, _size: %d", listItems, listSize);
                         
                         if (listItems != nullptr) {
-                            listCapacity = *(int*)((uintptr_t)listItems + 0x18);
-                        }
-                        
-                        LOGI("List size: %d, capacity: %d", listSize, listCapacity);
-                        
-                        if (listSize < listCapacity && listItems != nullptr) {
-                            // Add item directly to the list's items array
-                            void** listItemsArray = (void**)((uintptr_t)listItems + 0x20);
-                            listItemsArray[listSize] = foundItem;
-                            *(int*)((uintptr_t)itemList + 0x18) = listSize + 1;
-                            LOGI("Item added! New size: %d", listSize + 1);
-                        } else {
-                            LOGI("List is full or invalid");
+                            // Get array capacity from the array
+                            int listCapacity = *(int*)((uintptr_t)listItems + 0x18);
+                            LOGI("Array capacity: %d", listCapacity);
+                            
+                            if (listSize < listCapacity) {
+                                // Add item to the array
+                                void** listItemsArray = (void**)((uintptr_t)listItems + 0x20);
+                                listItemsArray[listSize] = foundItem;
+                                
+                                // Increment size
+                                *(int*)((uintptr_t)itemList + 0x18) = listSize + 1;
+                                
+                                LOGI("SUCCESS! Item duplicated! New size: %d", listSize + 1);
+                            } else {
+                                LOGI("List is full! Size: %d, Capacity: %d", listSize, listCapacity);
+                            }
                         }
                     }
+                } else {
+                    LOGI("Item not in inventory! You need to have the item first.");
                 }
             }
-            LOGI("=== END SPAWN ===");
+            LOGI("=== END DUPLICATION ===");
         }
         
         // Handle Level Setting
@@ -233,12 +192,10 @@ void Update(void *instance) {
             setLevelPressed = false;
             LOGI("=== SETTING LEVEL ===");
             
-            // Create Il2Cpp string from level value
             void* levelStr = Il2CppStringNew(levelValue.c_str());
             LOGI("Created level string: %p", levelStr);
             
             if (levelStr != nullptr) {
-                // Set _level field at offset 0x198
                 *(void**)((uintptr_t)instance + 0x198) = levelStr;
                 LOGI("Level set to: %s", levelValue.c_str());
             }
