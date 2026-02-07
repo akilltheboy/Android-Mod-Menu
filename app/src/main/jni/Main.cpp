@@ -308,27 +308,27 @@ void Update(void *instance) {
                                         
                                         LOGI("=== TOTAL ITEMS: %d ===", count);
                                         
-                                        for (int j = 0; j < count && j < 500; j++) {
+                                        for (int j = 0; j < count && j < 100; j++) {
                                             void* item = allItems[j];
                                             if (item == nullptr) continue;
                                             
-                                            // Try multiple offsets to find item name
-                                            int offsets[] = {0x18, 0x28, 0x30, 0x38, 0x48};
-                                            for (int off = 0; off < 5; off++) {
-                                                void* nameStr = *(void**)((uintptr_t)item + offsets[off]);
-                                                if (nameStr != nullptr) {
-                                                    int len = *(int*)((uintptr_t)nameStr + 0x10);
-                                                    if (len > 0 && len < 50) {
-                                                        char16_t* chars = (char16_t*)((uintptr_t)nameStr + 0x14);
-                                                        char name[64] = {0};
-                                                        for (int k = 0; k < len && k < 63; k++) {
-                                                            name[k] = (char)chars[k];
-                                                        }
-                                                        LOGI("[%d] (0x%X) %s", j, offsets[off], name);
-                                                        break; // Found name, skip other offsets
-                                                    }
-                                                }
+                                            // Safety: check if pointer is in valid memory range
+                                            if ((uintptr_t)item < 0x10000 || (uintptr_t)item > 0x7FFFFFFFFFFF) continue;
+                                            
+                                            // Try offset 0x30 only (most reliable for item name)
+                                            void* nameStr = *(void**)((uintptr_t)item + 0x30);
+                                            if (nameStr == nullptr) continue;
+                                            if ((uintptr_t)nameStr < 0x10000 || (uintptr_t)nameStr > 0x7FFFFFFFFFFF) continue;
+                                            
+                                            int len = *(int*)((uintptr_t)nameStr + 0x10);
+                                            if (len <= 0 || len > 50) continue;
+                                            
+                                            char16_t* chars = (char16_t*)((uintptr_t)nameStr + 0x14);
+                                            char name[64] = {0};
+                                            for (int k = 0; k < len && k < 63; k++) {
+                                                name[k] = (char)chars[k];
                                             }
+                                            LOGI("[%d] %s", j, name);
                                         }
                                     }
                                 }
