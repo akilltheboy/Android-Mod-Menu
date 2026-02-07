@@ -196,43 +196,51 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
 void (*old_SmartFox_Send)(void* smartFox, void* request);
 void SmartFox_Send_Hook(void* smartFox, void* request) {
     LOGI("=== SmartFox.Send INTERCEPTED ===");
-    LOGI("SmartFox: %p, Request: %p", smartFox, request);
     
     if (request != nullptr) {
-        // BaseRequest has 'id' field (short) at offset 0x10
-        // and 'targetController' at offset 0x18
-        short requestId = *(short*)((uintptr_t)request + 0x10);
-        LOGI("Request ID: %d", requestId);
+        // Get the class pointer (first field of Il2CppObject)
+        void* klass = *(void**)request;
+        LOGI("Request class ptr: %p", klass);
         
-        // Try to read more details from request object
-        // Check if it's ExtensionRequest (has extCmd field at offset 0x28)
-        void* possibleString = *(void**)((uintptr_t)request + 0x28);
-        if (possibleString != nullptr) {
-            // Il2CppString structure: object header (16 bytes) + length (4 bytes) + chars
-            int strLen = *(int*)((uintptr_t)possibleString + 0x10);
-            if (strLen > 0 && strLen < 256) {
-                char16_t* chars = (char16_t*)((uintptr_t)possibleString + 0x14);
-                char cmdBuf[257] = {0};
-                for (int i = 0; i < strLen && i < 256; i++) {
-                    cmdBuf[i] = (char)chars[i];
+        // BaseRequest.id is at offset 0x18 (int), not 0x10
+        // BaseRequest.targetController is at offset 0x1C
+        int requestId = *(int*)((uintptr_t)request + 0x18);
+        int targetController = *(int*)((uintptr_t)request + 0x1C);
+        LOGI("Request ID: %d, Controller: %d", requestId, targetController);
+        
+        // Try to read extCmd for ExtensionRequest
+        // ExtensionRequest extends BaseRequest
+        // From dump: extCmd is the first field after BaseRequest at 0x20 or 0x28
+        void* possibleExtCmd = *(void**)((uintptr_t)request + 0x28);
+        if (possibleExtCmd != nullptr) {
+            // Check if it looks like a valid Il2CppString
+            void* strKlass = *(void**)possibleExtCmd;
+            if (strKlass != nullptr) {
+                int strLen = *(int*)((uintptr_t)possibleExtCmd + 0x10);
+                if (strLen > 0 && strLen < 256) {
+                    char16_t* chars = (char16_t*)((uintptr_t)possibleExtCmd + 0x14);
+                    char cmdBuf[257] = {0};
+                    for (int i = 0; i < strLen && i < 256; i++) {
+                        cmdBuf[i] = (char)chars[i];
+                    }
+                    LOGI("ExtCmd/Data: %s", cmdBuf);
                 }
-                LOGI("Possible Command: %s", cmdBuf);
             }
         }
         
-        // Log request types for reference:
-        // 0=Handshake, 1=Login, 7=GenericMessage, 13=CallExtension, 20=PublicMessage
+        // Log known request types
+        // From dump: Handshake=0, Login=1, GenericMessage=7, CallExtension=13, PublicMessage=20
         switch(requestId) {
-            case 0: LOGI("Type: Handshake"); break;
-            case 1: LOGI("Type: Login"); break;
-            case 7: LOGI("Type: GenericMessage"); break;
-            case 13: LOGI("Type: CallExtension (ExtensionRequest)"); break;
-            case 20: LOGI("Type: PublicMessage"); break;
-            default: LOGI("Type: Unknown (%d)", requestId); break;
+            case 0: LOGI(">>> HANDSHAKE <<<"); break;
+            case 1: LOGI(">>> LOGIN <<<"); break;
+            case 2: LOGI(">>> LOGOUT <<<"); break;
+            case 7: LOGI(">>> GENERIC_MESSAGE (Chat?) <<<"); break;
+            case 13: LOGI(">>> CALL_EXTENSION <<<"); break;
+            case 20: LOGI(">>> PUBLIC_MESSAGE <<<"); break;
+            case 21: LOGI(">>> PRIVATE_MESSAGE <<<"); break;
+            default: break; // Don't spam for unknown
         }
     }
-    
-    LOGI("=== END INTERCEPT ===");
     
     // Call original
     old_SmartFox_Send(smartFox, request);
