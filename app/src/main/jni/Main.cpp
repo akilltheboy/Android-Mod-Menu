@@ -128,41 +128,44 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
 void (*old_Update)(void *instance);
 void Update(void *instance) {
     if (instance != nullptr) {
-        g_AttackComponent = instance;
-        
-        // Handle Item Spawning
-        if (spawnItemPressed && Il2CppStringNew != nullptr && GetItemByName != nullptr) {
-            spawnItemPressed = false;
-            
-            // Create Il2Cpp string from item name
-            void* itemNameStr = Il2CppStringNew(itemNameToSpawn.c_str());
-            if (itemNameStr != nullptr) {
-                // Get item by name
-                void* item = GetItemByName(instance, itemNameStr);
-                if (item != nullptr) {
-                    // Get itemList from AttackComponent (offset 0x138)
-                    void* itemList = *(void**)((uintptr_t)instance + 0x138);
-                    if (itemList != nullptr) {
-                        // Add item to list using List.Add
-                        // List<T>.Add is at offset 0x18 in the vtable usually
-                        // But we need to find the actual Add method
-                        LOGI("Item spawned: %s", itemNameToSpawn.c_str());
-                    }
-                }
-            }
+        // Only save the instance, don't process yet
+        if (g_AttackComponent == nullptr) {
+            g_AttackComponent = instance;
+            LOGI("AttackComponent captured: %p", instance);
         }
         
-        // Handle Level Setting
-        if (setLevelPressed && Il2CppStringNew != nullptr) {
-            setLevelPressed = false;
+        // Handle Item Spawning - SAFE VERSION
+        if (spawnItemPressed) {
+            spawnItemPressed = false;
+            LOGI("=== SPAWN ITEM DEBUG ===");
+            LOGI("Instance: %p", instance);
+            LOGI("Item name: %s", itemNameToSpawn.c_str());
             
-            // Create Il2Cpp string from level value
-            void* levelStr = Il2CppStringNew(levelValue.c_str());
-            if (levelStr != nullptr) {
-                // Set _level field at offset 0x198
-                *(void**)((uintptr_t)instance + 0x198) = levelStr;
-                LOGI("Level set to: %s", levelValue.c_str());
+            // Check if we can read itemList
+            void* itemList = *(void**)((uintptr_t)instance + 0x138);
+            LOGI("itemList pointer: %p", itemList);
+            
+            // Try to call GetItemByName safely
+            if (GetItemByName != nullptr) {
+                LOGI("GetItemByName function: %p", GetItemByName);
+                // Don't call yet, just log
             }
+            
+            LOGI("=== END DEBUG ===");
+        }
+        
+        // Handle Level Setting - SAFE VERSION
+        if (setLevelPressed) {
+            setLevelPressed = false;
+            LOGI("=== LEVEL UP DEBUG ===");
+            LOGI("Instance: %p", instance);
+            LOGI("Level value: %s", levelValue.c_str());
+            
+            // Read current _level field
+            void* currentLevel = *(void**)((uintptr_t)instance + 0x198);
+            LOGI("Current _level pointer: %p", currentLevel);
+            
+            LOGI("=== END DEBUG ===");
         }
     }
     
