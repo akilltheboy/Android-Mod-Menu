@@ -202,44 +202,73 @@ void Update(void *instance) {
                 LOGI("Searching %d items for: %s", g_AllItemsCount, itemNameToSpawn.c_str());
                 void** allItems = (void**)((uintptr_t)g_AllItemsArray + 0x20);
                 
+                // DEBUG: Dump first 3 items' structure
+                for (int i = 0; i < 3 && i < g_AllItemsCount; i++) {
+                    void* item = allItems[i];
+                    if (item == nullptr) continue;
+                    
+                    LOGI("=== ITEM[%d] at %p ===", i, item);
+                    
+                    // Try different offsets to find name string
+                    int offsets[] = {0x10, 0x18, 0x20, 0x30, 0x40, 0x90};
+                    for (int k = 0; k < 6; k++) {
+                        void* ptr = *(void**)((uintptr_t)item + offsets[k]);
+                        if (ptr != nullptr) {
+                            // Try to read as Il2CppString
+                            int len = *(int*)((uintptr_t)ptr + 0x10);
+                            if (len > 0 && len < 100) {
+                                char16_t* chars = (char16_t*)((uintptr_t)ptr + 0x14);
+                                char name[64] = {0};
+                                for (int j = 0; j < len && j < 63; j++) {
+                                    name[j] = (char)chars[j];
+                                }
+                                LOGI("  [0x%X] len=%d: %s", offsets[k], len, name);
+                            } else {
+                                LOGI("  [0x%X] ptr=%p (len=%d invalid)", offsets[k], ptr, len);
+                            }
+                        }
+                    }
+                }
+                
+                // Now search all items using description offset 0x90
                 for (int i = 0; i < g_AllItemsCount && i < 3000; i++) {
                     void* item = allItems[i];
                     if (item == nullptr) continue;
                     
-                    // VNLObject has a 'name' field - try common offsets
-                    // Try offset 0x10 (inherits from UnityEngine.Object which has name)
-                    void* itemNameStr = *(void**)((uintptr_t)item + 0x10);
-                    if (itemNameStr != nullptr) {
+                    // Try multiple offsets for name
+                    int nameOffsets[] = {0x10, 0x18, 0x30, 0x90};
+                    for (int k = 0; k < 4; k++) {
+                        void* itemNameStr = *(void**)((uintptr_t)item + nameOffsets[k]);
+                        if (itemNameStr == nullptr) continue;
+                        
                         int nameLen = *(int*)((uintptr_t)itemNameStr + 0x10);
-                        if (nameLen > 0 && nameLen < 100) {
-                            char16_t* nameChars = (char16_t*)((uintptr_t)itemNameStr + 0x14);
-                            
-                            // Debug: Log first 10 items
-                            if (i < 10) {
-                                char debugName[64] = {0};
-                                for (int k = 0; k < nameLen && k < 63; k++) {
-                                    debugName[k] = (char)nameChars[k];
-                                }
-                                LOGI("Item[%d]: %s", i, debugName);
-                            }
-                            
-                            // Check if matches
-                            bool match = true;
-                            if ((size_t)nameLen == itemNameToSpawn.length()) {
-                                for (size_t j = 0; j < itemNameToSpawn.length(); j++) {
-                                    if ((char)nameChars[j] != itemNameToSpawn[j]) {
-                                        match = false;
-                                        break;
-                                    }
-                                }
-                                if (match) {
-                                    foundItem = item;
-                                    LOGI("FOUND item at index %d!", i);
+                        if (nameLen <= 0 || nameLen >= 100) continue;
+                        
+                        char16_t* nameChars = (char16_t*)((uintptr_t)itemNameStr + 0x14);
+                        
+                        // Check if matches (case insensitive partial match)
+                        bool match = true;
+                        if ((size_t)nameLen >= itemNameToSpawn.length()) {
+                            for (size_t j = 0; j < itemNameToSpawn.length(); j++) {
+                                char c1 = (char)nameChars[j];
+                                char c2 = itemNameToSpawn[j];
+                                if (c1 != c2 && (c1 ^ 32) != c2) {
+                                    match = false;
                                     break;
                                 }
                             }
+                            if (match) {
+                                char foundName[64] = {0};
+                                for (int j = 0; j < nameLen && j < 63; j++) {
+                                    foundName[j] = (char)nameChars[j];
+                                }
+                                LOGI("FOUND at [%d] offset 0x%X: %s", i, nameOffsets[k], foundName);
+                                foundItem = item;
+                                break;
+                            }
                         }
                     }
+                    if (foundItem) break;
                 }
             } else {
                 LOGI("No items loaded! g_AllItemsArray=%p, count=%d", g_AllItemsArray, g_AllItemsCount);
