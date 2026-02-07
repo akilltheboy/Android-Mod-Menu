@@ -46,6 +46,10 @@ typedef void** (*il2cpp_domain_get_assemblies_t)(void* domain, size_t* size);
 typedef void* (*il2cpp_assembly_get_image_t)(void* assembly);
 typedef void* (*il2cpp_type_get_object_t)(void* type);
 
+// NetworkCore method to give items via server (like old mod)
+// Items will appear in Inbox from "VNL Entertainment"
+typedef void (*NetworkCoreGiveItem_t)(void* networkCore, void* itemName, int count, void* senderName, void* message, void* callback);
+
 Il2CppStringNew_t Il2CppStringNew = nullptr;
 GetItemByName_t GetItemByName = nullptr;
 FindObjectsOfTypeAll_t FindObjectsOfTypeAll = nullptr;
@@ -55,6 +59,8 @@ il2cpp_domain_get_t il2cpp_domain_get = nullptr;
 il2cpp_domain_get_assemblies_t il2cpp_domain_get_assemblies = nullptr;
 il2cpp_assembly_get_image_t il2cpp_assembly_get_image = nullptr;
 il2cpp_type_get_object_t il2cpp_type_get_object = nullptr;
+NetworkCoreGiveItem_t NetworkCoreGiveItem = nullptr;
+void* g_NetworkCore = nullptr;
 
 
 // ======================================
@@ -274,52 +280,62 @@ void Update(void *instance) {
                 LOGI("No items loaded! g_AllItemsArray=%p, count=%d", g_AllItemsArray, g_AllItemsCount);
             }
             
-            // Add item to player inventory
-            if (foundItem != nullptr) {
-                void* itemList = *(void**)((uintptr_t)instance + 0x138);
-                LOGI("itemList: %p", itemList);
-                
-                // First try to find if player already has this item using GetItemByName
-                void* playerExistingItem = nullptr;
-                if (GetItemByName != nullptr && Il2CppStringNew != nullptr) {
-                    void* nameStr = Il2CppStringNew(itemNameToSpawn.c_str());
-                    playerExistingItem = GetItemByName(instance, nameStr);
-                    LOGI("Existing item in inventory: %p", playerExistingItem);
-                }
-                
-                // Use the player's existing item if available (better for stacking)
-                // Otherwise use the found template item
-                void* itemToAdd = (playerExistingItem != nullptr) ? playerExistingItem : foundItem;
-                LOGI("Using item: %p", itemToAdd);
-                
-                if (itemList != nullptr) {
-                    void* listItems = *(void**)((uintptr_t)itemList + 0x10);
-                    int listSize = *(int*)((uintptr_t)itemList + 0x18);
+            // Give item via NetworkCore (server-side, like old mod)
+            // Items will appear in Inbox from "VNL Entertainment"
+            if (NetworkCoreGiveItem != nullptr && Il2CppStringNew != nullptr) {
+                // Get NetworkCore instance if not already cached
+                if (g_NetworkCore == nullptr && il2cpp_domain_get != nullptr) {
+                    LOGI("Looking for NetworkCore instance...");
                     
-                    LOGI("List size: %d", listSize);
-                    
-                    if (listItems != nullptr) {
-                        int listCapacity = *(int*)((uintptr_t)listItems + 0x18);
-                        LOGI("List capacity: %d", listCapacity);
+                    void* domain = il2cpp_domain_get();
+                    if (domain != nullptr) {
+                        size_t assemblyCount = 0;
+                        void** assemblies = il2cpp_domain_get_assemblies(domain, &assemblyCount);
                         
-                        // Expand if needed
-                        if (listSize >= listCapacity) {
-                            int newCap = (listCapacity < 10) ? 20 : listCapacity * 2;
-                            *(int*)((uintptr_t)listItems + 0x18) = newCap;
-                            listCapacity = newCap;
-                            LOGI("Expanded to: %d", newCap);
-                        }
-                        
-                        if (listSize < listCapacity) {
-                            void** arr = (void**)((uintptr_t)listItems + 0x20);
-                            arr[listSize] = itemToAdd;
-                            *(int*)((uintptr_t)itemList + 0x18) = listSize + 1;
-                            LOGI("SUCCESS! Added! New size: %d", listSize + 1);
+                        for (size_t i = 0; i < assemblyCount; i++) {
+                            void* image = il2cpp_assembly_get_image(assemblies[i]);
+                            if (image != nullptr) {
+                                void* networkCoreClass = il2cpp_class_from_name(image, "", "NetworkCore");
+                                if (networkCoreClass != nullptr) {
+                                    LOGI("Found NetworkCore class: %p", networkCoreClass);
+                                    
+                                    void* type = il2cpp_class_get_type(networkCoreClass);
+                                    if (type != nullptr) {
+                                        void* typeObject = il2cpp_type_get_object(type);
+                                        if (FindObjectsOfTypeAll != nullptr && typeObject != nullptr) {
+                                            void* networkCoreArray = FindObjectsOfTypeAll(typeObject);
+                                            if (networkCoreArray != nullptr) {
+                                                int count = *(int*)((uintptr_t)networkCoreArray + 0x18);
+                                                LOGI("Found %d NetworkCore instances", count);
+                                                if (count > 0) {
+                                                    void** items = (void**)((uintptr_t)networkCoreArray + 0x20);
+                                                    g_NetworkCore = items[0];
+                                                    LOGI("NetworkCore instance: %p", g_NetworkCore);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
+                
+                if (g_NetworkCore != nullptr) {
+                    LOGI("Calling NetworkCore.GiveItemByName...");
+                    void* itemNameStr = Il2CppStringNew(itemNameToSpawn.c_str());
+                    void* emptyStr = Il2CppStringNew("");
+                    
+                    // Call the server method: GiveItemByName(itemName, count=1, senderName, message, callback)
+                    NetworkCoreGiveItem(g_NetworkCore, itemNameStr, 1, emptyStr, emptyStr, nullptr);
+                    LOGI("SUCCESS! Item request sent to server: %s", itemNameToSpawn.c_str());
+                    LOGI("Check your Inbox for the item!");
+                } else {
+                    LOGI("ERROR: NetworkCore instance not found!");
+                }
             } else {
-                LOGI("Item not found: %s", itemNameToSpawn.c_str());
+                LOGI("ERROR: NetworkCoreGiveItem not initialized!");
             }
             LOGI("=== END SPAWN ===");
         }
@@ -355,6 +371,7 @@ ElfScanner g_il2cppELF;
 // ======================================
 #define RVA_GET_ITEM_BY_NAME     0x41C8D24  // AttackComponent.GetItemByName(string)
 #define RVA_ATTACK_COMPONENT_UPDATE  0x41CB458  // AttackComponent.Update()
+#define RVA_NETWORKCORE_GIVE_ITEM    0x305E744  // NetworkCore.GiveItemByName(string, int, string, string, callback)
 
 // ======================================
 // Hack Thread
@@ -395,6 +412,10 @@ void *hack_thread(void *) {
     // Get GetItemByName function
     GetItemByName = (GetItemByName_t)getAbsoluteAddress(targetLibName, RVA_GET_ITEM_BY_NAME);
     LOGI("GetItemByName at: %p", GetItemByName);
+    
+    // Get NetworkCore.GiveItemByName function (for server-side item spawning)
+    NetworkCoreGiveItem = (NetworkCoreGiveItem_t)getAbsoluteAddress(targetLibName, RVA_NETWORKCORE_GIVE_ITEM);
+    LOGI("NetworkCoreGiveItem at: %p", NetworkCoreGiveItem);
     
     // Hook Update
     HOOK(targetLibName, RVA_ATTACK_COMPONENT_UPDATE, Update, old_Update);
