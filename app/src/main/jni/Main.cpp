@@ -27,6 +27,7 @@ std::string itemNameToSpawn = "";
 std::string levelValue = "";
 bool spawnItemPressed = false;
 bool setLevelPressed = false;
+bool listItemsPressed = false;
 void* g_AttackComponent = nullptr;
 void* g_AllItemsArray = nullptr;
 int g_AllItemsCount = 0;
@@ -124,14 +125,19 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
             }
             break;
             
-        case 2: // Level Value Input
+        case 2: // List All Items Button
+            listItemsPressed = true;
+            LOGI("List all items button pressed");
+            break;
+            
+        case 3: // Level Value Input
             if (text != nullptr && strlen(textChar) > 0) {
                 levelValue = textChar;
                 LOGI("Level value set to: %s", levelValue.c_str());
             }
             break;
             
-        case 3: // Set Level Button
+        case 4: // Set Level Button
             if (!levelValue.empty()) {
                 setLevelPressed = true;
                 LOGI("Set level pressed: %s", levelValue.c_str());
@@ -165,9 +171,12 @@ void Update(void *instance) {
             LOGI("=== TRUE ITEM SPAWN ===");
             LOGI("Target item: %s", itemNameToSpawn.c_str());
             
-            // LAZY LOAD: Get all BadNerdItems on first spawn (game must be loaded)
-            if (g_AllItemsArray == nullptr && il2cpp_domain_get != nullptr) {
-                LOGI("Loading all items for first time...");
+            // RELOAD items fresh each time (don't cache - items can move in memory)
+            void* itemsArray = nullptr;
+            int itemsCount = 0;
+            
+            if (il2cpp_domain_get != nullptr) {
+                LOGI("Loading items fresh...");
                 
                 void* domain = il2cpp_domain_get();
                 if (domain != nullptr) {
@@ -188,10 +197,10 @@ void Update(void *instance) {
                                     LOGI("Type object: %p", typeObject);
                                     
                                     if (FindObjectsOfTypeAll != nullptr && typeObject != nullptr) {
-                                        g_AllItemsArray = FindObjectsOfTypeAll(typeObject);
-                                        if (g_AllItemsArray != nullptr) {
-                                            g_AllItemsCount = *(int*)((uintptr_t)g_AllItemsArray + 0x18);
-                                            LOGI("LOADED %d BadNerdItem objects!", g_AllItemsCount);
+                                        itemsArray = FindObjectsOfTypeAll(typeObject);
+                                        if (itemsArray != nullptr) {
+                                            itemsCount = *(int*)((uintptr_t)itemsArray + 0x18);
+                                            LOGI("LOADED %d BadNerdItem objects!", itemsCount);
                                         }
                                     }
                                 }
@@ -205,12 +214,12 @@ void Update(void *instance) {
             // Search for item in loaded items
             void* foundItem = nullptr;
             
-            if (g_AllItemsArray != nullptr && g_AllItemsCount > 0) {
-                LOGI("Searching %d items for: %s", g_AllItemsCount, itemNameToSpawn.c_str());
-                void** allItems = (void**)((uintptr_t)g_AllItemsArray + 0x20);
+            if (itemsArray != nullptr && itemsCount > 0) {
+                LOGI("Searching %d items for: %s", itemsCount, itemNameToSpawn.c_str());
+                void** allItems = (void**)((uintptr_t)itemsArray + 0x20);
                 
                 // DEBUG: Dump first 3 items' structure
-                for (int i = 0; i < 3 && i < g_AllItemsCount; i++) {
+                for (int i = 0; i < 3 && i < itemsCount; i++) {
                     void* item = allItems[i];
                     if (item == nullptr) continue;
                     
@@ -238,7 +247,7 @@ void Update(void *instance) {
                 }
                 
                 // Now search all items using description offset 0x90
-                for (int i = 0; i < g_AllItemsCount && i < 3000; i++) {
+                for (int i = 0; i < itemsCount && i < 3000; i++) {
                     void* item = allItems[i];
                     if (item == nullptr) continue;
                     
@@ -370,6 +379,61 @@ void Update(void *instance) {
                 LOGI("Level set to: %s", levelValue.c_str());
             }
             LOGI("=== END LEVEL ===");
+        }
+        
+        // Handle List All Items
+        if (listItemsPressed && il2cpp_domain_get != nullptr) {
+            listItemsPressed = false;
+            LOGI("=== LISTING ALL ITEMS ===");
+            
+            void* domain = il2cpp_domain_get();
+            if (domain != nullptr) {
+                size_t assemblyCount = 0;
+                void** assemblies = il2cpp_domain_get_assemblies(domain, &assemblyCount);
+                
+                for (size_t i = 0; i < assemblyCount; i++) {
+                    void* image = il2cpp_assembly_get_image(assemblies[i]);
+                    if (image != nullptr) {
+                        void* badNerdItemClass = il2cpp_class_from_name(image, "", "BadNerdItem");
+                        if (badNerdItemClass != nullptr) {
+                            void* type = il2cpp_class_get_type(badNerdItemClass);
+                            if (type != nullptr) {
+                                void* typeObject = il2cpp_type_get_object(type);
+                                if (FindObjectsOfTypeAll != nullptr && typeObject != nullptr) {
+                                    void* itemsArray = FindObjectsOfTypeAll(typeObject);
+                                    if (itemsArray != nullptr) {
+                                        int count = *(int*)((uintptr_t)itemsArray + 0x18);
+                                        void** allItems = (void**)((uintptr_t)itemsArray + 0x20);
+                                        
+                                        LOGI("=== TOTAL ITEMS: %d ===", count);
+                                        
+                                        for (int j = 0; j < count && j < 500; j++) {
+                                            void* item = allItems[j];
+                                            if (item == nullptr) continue;
+                                            
+                                            // Try offset 0x30 (where Energy Drink was found)
+                                            void* nameStr = *(void**)((uintptr_t)item + 0x30);
+                                            if (nameStr != nullptr) {
+                                                int len = *(int*)((uintptr_t)nameStr + 0x10);
+                                                if (len > 0 && len < 100) {
+                                                    char16_t* chars = (char16_t*)((uintptr_t)nameStr + 0x14);
+                                                    char name[64] = {0};
+                                                    for (int k = 0; k < len && k < 63; k++) {
+                                                        name[k] = (char)chars[k];
+                                                    }
+                                                    LOGI("[%d] %s", j, name);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            LOGI("=== END ITEM LIST ===");
         }
     }
     
