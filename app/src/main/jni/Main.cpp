@@ -128,36 +128,101 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
 void (*old_Update)(void *instance);
 void Update(void *instance) {
     if (instance != nullptr) {
-        // Save the instance
+        // Save the instance (this is PlayerAttackComponent extending AttackComponent)
         if (g_AttackComponent == nullptr) {
             g_AttackComponent = instance;
-            LOGI("AttackComponent captured: %p", instance);
+            LOGI("PlayerAttackComponent captured: %p", instance);
+            
+            // Log the master item array info
+            void* masterItemArray = *(void**)((uintptr_t)instance + 0x6A0);
+            if (masterItemArray != nullptr) {
+                int arrayLength = *(int*)((uintptr_t)masterItemArray + 0x18);
+                LOGI("Master Item Array: %p, Length: %d", masterItemArray, arrayLength);
+            }
         }
         
-        // Handle Item Spawning
-        if (spawnItemPressed && Il2CppStringNew != nullptr && GetItemByName != nullptr) {
+        // Handle Item Spawning - NEW IMPLEMENTATION
+        if (spawnItemPressed) {
             spawnItemPressed = false;
-            LOGI("=== SPAWNING ITEM ===");
+            LOGI("=== SPAWNING ITEM (NEW) ===");
+            LOGI("Target item: %s", itemNameToSpawn.c_str());
             
-            // Create Il2Cpp string from item name
-            void* itemNameStr = Il2CppStringNew(itemNameToSpawn.c_str());
-            LOGI("Created string: %p", itemNameStr);
+            // Get master item array at offset 0x6A0 (PlayerAttackComponent)
+            void* masterItemArray = *(void**)((uintptr_t)instance + 0x6A0);
+            LOGI("Master Array: %p", masterItemArray);
             
-            if (itemNameStr != nullptr) {
-                // Get item by name
-                void* item = GetItemByName(instance, itemNameStr);
-                LOGI("GetItemByName returned: %p", item);
+            if (masterItemArray != nullptr) {
+                // Il2Cpp Array: [0x18] = length, [0x20] = first element
+                int arrayLength = *(int*)((uintptr_t)masterItemArray + 0x18);
+                void** items = (void**)((uintptr_t)masterItemArray + 0x20);
+                LOGI("Array length: %d", arrayLength);
                 
-                if (item != nullptr) {
-                    // Get itemList from AttackComponent (offset 0x138)
+                void* foundItem = nullptr;
+                
+                // Search for item by name
+                for (int i = 0; i < arrayLength && i < 500; i++) {
+                    void* item = items[i];
+                    if (item == nullptr) continue;
+                    
+                    // Get item's GameObject name using Unity's Object.name
+                    // MonoBehaviour has Component base which has gameObject
+                    // Try to get name via ToString or similar
+                    
+                    // For now, try using GetItemByName to see if this item matches
+                    if (Il2CppStringNew != nullptr && GetItemByName != nullptr) {
+                        // Try to match - this is a workaround
+                        void* nameStr = Il2CppStringNew(itemNameToSpawn.c_str());
+                        void* matchedItem = GetItemByName(instance, nameStr);
+                        
+                        if (matchedItem != nullptr) {
+                            // We found the item in inventory, now get its template from master array
+                            // by comparing at same index range
+                            foundItem = item;
+                            LOGI("Found potential match at index %d: %p", i, item);
+                            break;
+                        }
+                    }
+                }
+                
+                // Alternative: Search master array and compare first few chars
+                if (foundItem == nullptr) {
+                    LOGI("Searching master array by first item...");
+                    // Just log first 10 items for debugging
+                    for (int i = 0; i < 10 && i < arrayLength; i++) {
+                        void* item = items[i];
+                        if (item != nullptr) {
+                            LOGI("Item[%d]: %p", i, item);
+                        }
+                    }
+                }
+                
+                // Try to add item to inventory list
+                if (foundItem != nullptr) {
                     void* itemList = *(void**)((uintptr_t)instance + 0x138);
-                    LOGI("itemList: %p", itemList);
+                    LOGI("Adding to itemList: %p", itemList);
                     
                     if (itemList != nullptr) {
-                        LOGI("Item spawned successfully: %s", itemNameToSpawn.c_str());
+                        // Il2Cpp List: [0x10] = _items array, [0x18] = _size
+                        void* listItems = *(void**)((uintptr_t)itemList + 0x10);
+                        int listSize = *(int*)((uintptr_t)itemList + 0x18);
+                        int listCapacity = 0;
+                        
+                        if (listItems != nullptr) {
+                            listCapacity = *(int*)((uintptr_t)listItems + 0x18);
+                        }
+                        
+                        LOGI("List size: %d, capacity: %d", listSize, listCapacity);
+                        
+                        if (listSize < listCapacity && listItems != nullptr) {
+                            // Add item directly to the list's items array
+                            void** listItemsArray = (void**)((uintptr_t)listItems + 0x20);
+                            listItemsArray[listSize] = foundItem;
+                            *(int*)((uintptr_t)itemList + 0x18) = listSize + 1;
+                            LOGI("Item added! New size: %d", listSize + 1);
+                        } else {
+                            LOGI("List is full or invalid");
+                        }
                     }
-                } else {
-                    LOGI("Item not found: %s", itemNameToSpawn.c_str());
                 }
             }
             LOGI("=== END SPAWN ===");
