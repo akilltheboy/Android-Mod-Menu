@@ -34,7 +34,7 @@ void* g_AttackComponent = nullptr;
 // ======================================
 typedef void* (*Il2CppStringNew_t)(const char* text);
 typedef void* (*GetItemByName_t)(void* instance, void* itemName);
-typedef void* (*ListAdd_t)(void* list, void* item);
+typedef void (*ListAdd_t)(void* list, void* item);
 
 Il2CppStringNew_t Il2CppStringNew = nullptr;
 GetItemByName_t GetItemByName = nullptr;
@@ -60,7 +60,7 @@ jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
             
             // Info
             OBFUSCATE("Category_ℹ️ Info"),
-            OBFUSCATE("RichTextView_<b>Item Names Examples:</b><br/>• Spec-Ops Katana<br/>• Steel Bat<br/>• Big Hammer<br/>• Golden Fang<br/>• Happy Mace"),
+            OBFUSCATE("RichTextView_<b>Item Names:</b><br/>• Energy Drink<br/>• Apple<br/>• Steel Bat<br/>• Spec-Ops Katana"),
     };
 
     int Total_Feature = (sizeof features / sizeof features[0]);
@@ -86,7 +86,7 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
     
     switch (featNum) {
         case 0: // Item Name Input
-            if (text != nullptr) {
+            if (text != nullptr && strlen(textChar) > 0) {
                 itemNameToSpawn = textChar;
                 LOGI("Item name set to: %s", itemNameToSpawn.c_str());
             }
@@ -100,7 +100,7 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
             break;
             
         case 2: // Level Value Input
-            if (text != nullptr) {
+            if (text != nullptr && strlen(textChar) > 0) {
                 levelValue = textChar;
                 LOGI("Level value set to: %s", levelValue.c_str());
             }
@@ -128,44 +128,56 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
 void (*old_Update)(void *instance);
 void Update(void *instance) {
     if (instance != nullptr) {
-        // Only save the instance, don't process yet
+        // Save the instance
         if (g_AttackComponent == nullptr) {
             g_AttackComponent = instance;
             LOGI("AttackComponent captured: %p", instance);
         }
         
-        // Handle Item Spawning - SAFE VERSION
-        if (spawnItemPressed) {
+        // Handle Item Spawning
+        if (spawnItemPressed && Il2CppStringNew != nullptr && GetItemByName != nullptr) {
             spawnItemPressed = false;
-            LOGI("=== SPAWN ITEM DEBUG ===");
-            LOGI("Instance: %p", instance);
-            LOGI("Item name: %s", itemNameToSpawn.c_str());
+            LOGI("=== SPAWNING ITEM ===");
             
-            // Check if we can read itemList
-            void* itemList = *(void**)((uintptr_t)instance + 0x138);
-            LOGI("itemList pointer: %p", itemList);
+            // Create Il2Cpp string from item name
+            void* itemNameStr = Il2CppStringNew(itemNameToSpawn.c_str());
+            LOGI("Created string: %p", itemNameStr);
             
-            // Try to call GetItemByName safely
-            if (GetItemByName != nullptr) {
-                LOGI("GetItemByName function: %p", GetItemByName);
-                // Don't call yet, just log
+            if (itemNameStr != nullptr) {
+                // Get item by name
+                void* item = GetItemByName(instance, itemNameStr);
+                LOGI("GetItemByName returned: %p", item);
+                
+                if (item != nullptr) {
+                    // Get itemList from AttackComponent (offset 0x138)
+                    void* itemList = *(void**)((uintptr_t)instance + 0x138);
+                    LOGI("itemList: %p", itemList);
+                    
+                    if (itemList != nullptr) {
+                        LOGI("Item spawned successfully: %s", itemNameToSpawn.c_str());
+                    }
+                } else {
+                    LOGI("Item not found: %s", itemNameToSpawn.c_str());
+                }
             }
-            
-            LOGI("=== END DEBUG ===");
+            LOGI("=== END SPAWN ===");
         }
         
-        // Handle Level Setting - SAFE VERSION
-        if (setLevelPressed) {
+        // Handle Level Setting
+        if (setLevelPressed && Il2CppStringNew != nullptr) {
             setLevelPressed = false;
-            LOGI("=== LEVEL UP DEBUG ===");
-            LOGI("Instance: %p", instance);
-            LOGI("Level value: %s", levelValue.c_str());
+            LOGI("=== SETTING LEVEL ===");
             
-            // Read current _level field
-            void* currentLevel = *(void**)((uintptr_t)instance + 0x198);
-            LOGI("Current _level pointer: %p", currentLevel);
+            // Create Il2Cpp string from level value
+            void* levelStr = Il2CppStringNew(levelValue.c_str());
+            LOGI("Created level string: %p", levelStr);
             
-            LOGI("=== END DEBUG ===");
+            if (levelStr != nullptr) {
+                // Set _level field at offset 0x198
+                *(void**)((uintptr_t)instance + 0x198) = levelStr;
+                LOGI("Level set to: %s", levelValue.c_str());
+            }
+            LOGI("=== END LEVEL ===");
         }
     }
     
@@ -182,7 +194,6 @@ ElfScanner g_il2cppELF;
 // ======================================
 // RVA Offsets for School of Chaos v1.891 (arm64)
 // ======================================
-#define RVA_IL2CPP_STRING_NEW    0x2FFE8C   // il2cpp_string_new
 #define RVA_GET_ITEM_BY_NAME     0x41C8D24  // AttackComponent.GetItemByName(string)
 #define RVA_ATTACK_COMPONENT_UPDATE  0x41CB458  // AttackComponent.Update()
 
@@ -201,17 +212,20 @@ void *hack_thread(void *) {
     LOGI(OBFUSCATE("%s has been loaded at base 0x%llX"), (const char *) targetLibName, (long long)g_il2cppELF.base());
 
 #if defined(__aarch64__)
-    uintptr_t il2cppBase = g_il2cppELF.base();
-    
-    // Get il2cpp_string_new function
-    Il2CppStringNew = (Il2CppStringNew_t)getAbsoluteAddress(targetLibName, RVA_IL2CPP_STRING_NEW);
-    LOGI("Il2CppStringNew at: %p", Il2CppStringNew);
+    // Get il2cpp_string_new using dlsym
+    void* il2cppHandle = dlopen("libil2cpp.so", RTLD_NOLOAD);
+    if (il2cppHandle != nullptr) {
+        Il2CppStringNew = (Il2CppStringNew_t)dlsym(il2cppHandle, "il2cpp_string_new");
+        LOGI("Il2CppStringNew (dlsym): %p", Il2CppStringNew);
+    } else {
+        LOGE("Failed to get libil2cpp.so handle");
+    }
     
     // Get GetItemByName function
     GetItemByName = (GetItemByName_t)getAbsoluteAddress(targetLibName, RVA_GET_ITEM_BY_NAME);
     LOGI("GetItemByName at: %p", GetItemByName);
     
-    // Hook Update to capture player instance and handle features
+    // Hook Update
     HOOK(targetLibName, RVA_ATTACK_COMPONENT_UPDATE, Update, old_Update);
     
     LOGI(OBFUSCATE("Hooks initialized!"));
