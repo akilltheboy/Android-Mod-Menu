@@ -78,6 +78,7 @@ jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
             OBFUSCATE("Collapse_📦 Item Spawner"),
             OBFUSCATE("CollapseAdd_InputText_Item Name"),
             OBFUSCATE("CollapseAdd_Button_🎁 Spawn Item"),
+            OBFUSCATE("CollapseAdd_Button_📋 List All Items"),
             
             // Level Up
             OBFUSCATE("Collapse_⬆️ Level Up"),
@@ -86,7 +87,7 @@ jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
             
             // Info
             OBFUSCATE("Category_ℹ️ Info"),
-            OBFUSCATE("RichTextView_<b>Item Names:</b><br/>• Energy Drink<br/>• Apple<br/>• Steel Bat<br/>• Spec-Ops Katana"),
+            OBFUSCATE("RichTextView_<b>Check logcat for items!</b>"),
     };
 
     int Total_Feature = (sizeof features / sizeof features[0]);
@@ -171,123 +172,23 @@ void Update(void *instance) {
             LOGI("=== TRUE ITEM SPAWN ===");
             LOGI("Target item: %s", itemNameToSpawn.c_str());
             
-            // RELOAD items fresh each time (don't cache - items can move in memory)
-            void* itemsArray = nullptr;
-            int itemsCount = 0;
-            
-            if (il2cpp_domain_get != nullptr) {
-                LOGI("Loading items fresh...");
-                
-                void* domain = il2cpp_domain_get();
-                if (domain != nullptr) {
-                    size_t assemblyCount = 0;
-                    void** assemblies = il2cpp_domain_get_assemblies(domain, &assemblyCount);
-                    LOGI("Found %zu assemblies", assemblyCount);
-                    
-                    for (size_t i = 0; i < assemblyCount; i++) {
-                        void* image = il2cpp_assembly_get_image(assemblies[i]);
-                        if (image != nullptr) {
-                            void* badNerdItemClass = il2cpp_class_from_name(image, "", "BadNerdItem");
-                            if (badNerdItemClass != nullptr) {
-                                LOGI("Found BadNerdItem class: %p", badNerdItemClass);
-                                
-                                void* type = il2cpp_class_get_type(badNerdItemClass);
-                                if (type != nullptr) {
-                                    void* typeObject = il2cpp_type_get_object(type);
-                                    LOGI("Type object: %p", typeObject);
-                                    
-                                    if (FindObjectsOfTypeAll != nullptr && typeObject != nullptr) {
-                                        itemsArray = FindObjectsOfTypeAll(typeObject);
-                                        if (itemsArray != nullptr) {
-                                            itemsCount = *(int*)((uintptr_t)itemsArray + 0x18);
-                                            LOGI("LOADED %d BadNerdItem objects!", itemsCount);
-                                        }
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Search for item in loaded items
+            // Use GetItemByName directly - much simpler than manual search!
             void* foundItem = nullptr;
             
-            if (itemsArray != nullptr && itemsCount > 0) {
-                LOGI("Searching %d items for: %s", itemsCount, itemNameToSpawn.c_str());
-                void** allItems = (void**)((uintptr_t)itemsArray + 0x20);
+            if (GetItemByName != nullptr && Il2CppStringNew != nullptr) {
+                void* itemNameStr = Il2CppStringNew(itemNameToSpawn.c_str());
+                LOGI("Created item name string: %p", itemNameStr);
                 
-                // DEBUG: Dump first 3 items' structure
-                for (int i = 0; i < 3 && i < itemsCount; i++) {
-                    void* item = allItems[i];
-                    if (item == nullptr) continue;
-                    
-                    LOGI("=== ITEM[%d] at %p ===", i, item);
-                    
-                    // Try different offsets to find name string
-                    int offsets[] = {0x10, 0x18, 0x20, 0x30, 0x40, 0x90};
-                    for (int k = 0; k < 6; k++) {
-                        void* ptr = *(void**)((uintptr_t)item + offsets[k]);
-                        if (ptr != nullptr) {
-                            // Try to read as Il2CppString
-                            int len = *(int*)((uintptr_t)ptr + 0x10);
-                            if (len > 0 && len < 100) {
-                                char16_t* chars = (char16_t*)((uintptr_t)ptr + 0x14);
-                                char name[64] = {0};
-                                for (int j = 0; j < len && j < 63; j++) {
-                                    name[j] = (char)chars[j];
-                                }
-                                LOGI("  [0x%X] len=%d: %s", offsets[k], len, name);
-                            } else {
-                                LOGI("  [0x%X] ptr=%p (len=%d invalid)", offsets[k], ptr, len);
-                            }
-                        }
-                    }
-                }
+                // Call GetItemByName(instance, itemName) 
+                foundItem = GetItemByName(instance, itemNameStr);
                 
-                // Now search all items using description offset 0x90
-                for (int i = 0; i < itemsCount && i < 3000; i++) {
-                    void* item = allItems[i];
-                    if (item == nullptr) continue;
-                    
-                    // Try multiple offsets for name
-                    int nameOffsets[] = {0x10, 0x18, 0x30, 0x90};
-                    for (int k = 0; k < 4; k++) {
-                        void* itemNameStr = *(void**)((uintptr_t)item + nameOffsets[k]);
-                        if (itemNameStr == nullptr) continue;
-                        
-                        int nameLen = *(int*)((uintptr_t)itemNameStr + 0x10);
-                        if (nameLen <= 0 || nameLen >= 100) continue;
-                        
-                        char16_t* nameChars = (char16_t*)((uintptr_t)itemNameStr + 0x14);
-                        
-                        // Check if matches (case insensitive partial match)
-                        bool match = true;
-                        if ((size_t)nameLen >= itemNameToSpawn.length()) {
-                            for (size_t j = 0; j < itemNameToSpawn.length(); j++) {
-                                char c1 = (char)nameChars[j];
-                                char c2 = itemNameToSpawn[j];
-                                if (c1 != c2 && (c1 ^ 32) != c2) {
-                                    match = false;
-                                    break;
-                                }
-                            }
-                            if (match) {
-                                char foundName[64] = {0};
-                                for (int j = 0; j < nameLen && j < 63; j++) {
-                                    foundName[j] = (char)nameChars[j];
-                                }
-                                LOGI("FOUND at [%d] offset 0x%X: %s", i, nameOffsets[k], foundName);
-                                foundItem = item;
-                                break;
-                            }
-                        }
-                    }
-                    if (foundItem) break;
+                if (foundItem != nullptr) {
+                    LOGI("FOUND item via GetItemByName: %p", foundItem);
+                } else {
+                    LOGI("GetItemByName returned null - item '%s' not found", itemNameToSpawn.c_str());
                 }
             } else {
-                LOGI("No items loaded! g_AllItemsArray=%p, count=%d", g_AllItemsArray, g_AllItemsCount);
+                LOGI("ERROR: GetItemByName not initialized!");
             }
             
             // Give item via NetworkCore (server-side, like old mod)
@@ -411,17 +312,21 @@ void Update(void *instance) {
                                             void* item = allItems[j];
                                             if (item == nullptr) continue;
                                             
-                                            // Try offset 0x30 (where Energy Drink was found)
-                                            void* nameStr = *(void**)((uintptr_t)item + 0x30);
-                                            if (nameStr != nullptr) {
-                                                int len = *(int*)((uintptr_t)nameStr + 0x10);
-                                                if (len > 0 && len < 100) {
-                                                    char16_t* chars = (char16_t*)((uintptr_t)nameStr + 0x14);
-                                                    char name[64] = {0};
-                                                    for (int k = 0; k < len && k < 63; k++) {
-                                                        name[k] = (char)chars[k];
+                                            // Try multiple offsets to find item name
+                                            int offsets[] = {0x18, 0x28, 0x30, 0x38, 0x48};
+                                            for (int off = 0; off < 5; off++) {
+                                                void* nameStr = *(void**)((uintptr_t)item + offsets[off]);
+                                                if (nameStr != nullptr) {
+                                                    int len = *(int*)((uintptr_t)nameStr + 0x10);
+                                                    if (len > 0 && len < 50) {
+                                                        char16_t* chars = (char16_t*)((uintptr_t)nameStr + 0x14);
+                                                        char name[64] = {0};
+                                                        for (int k = 0; k < len && k < 63; k++) {
+                                                            name[k] = (char)chars[k];
+                                                        }
+                                                        LOGI("[%d] (0x%X) %s", j, offsets[off], name);
+                                                        break; // Found name, skip other offsets
                                                     }
-                                                    LOGI("[%d] %s", j, name);
                                                 }
                                             }
                                         }
