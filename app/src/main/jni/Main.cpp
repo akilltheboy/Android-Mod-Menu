@@ -47,8 +47,9 @@ typedef void* (*il2cpp_assembly_get_image_t)(void* assembly);
 typedef void* (*il2cpp_type_get_object_t)(void* type);
 
 // NetworkCore method to give items via server (like old mod)
-// Items will appear in Inbox from "VNL Entertainment"
-typedef void (*NetworkCoreGiveItem_t)(void* networkCore, void* itemName, int count, void* senderName, void* message, void* callback);
+// NEW: Takes BadNerdItem object, not string (API changed in v1.891)
+// Signature: void NetworkCore.GiveItem(BadNerdItem item, int count, string sender, string message, Callback callback)
+typedef void (*NetworkCoreGiveItem_t)(void* networkCore, void* badNerdItem, int count, void* senderName, void* message, void* callback);
 
 Il2CppStringNew_t Il2CppStringNew = nullptr;
 GetItemByName_t GetItemByName = nullptr;
@@ -323,16 +324,32 @@ void Update(void *instance) {
                 }
                 
                 if (g_NetworkCore != nullptr) {
-                    LOGI("Calling NetworkCore.GiveItemByName...");
-                    void* itemNameStr = Il2CppStringNew(itemNameToSpawn.c_str());
-                    void* emptyStr = Il2CppStringNew("");
-                    
-                    // Call the server method: GiveItemByName(itemName, count=1, senderName, message, callback)
-                    NetworkCoreGiveItem(g_NetworkCore, itemNameStr, 1, emptyStr, emptyStr, nullptr);
-                    LOGI("SUCCESS! Item request sent to server: %s", itemNameToSpawn.c_str());
-                    LOGI("Check your Inbox for the item!");
+                    // Check if we found the item
+                    if (foundItem != nullptr) {
+                        LOGI("=== SENDING TO SERVER ===");
+                        LOGI("NetworkCore instance: %p", g_NetworkCore);
+                        LOGI("Item to send: %p (%s)", foundItem, itemNameToSpawn.c_str());
+                        
+                        // Use "VNL Entertainment" as sender (like old mod command)
+                        void* senderStr = Il2CppStringNew("VNL Entertainment");
+                        void* messageStr = Il2CppStringNew("");
+                        
+                        LOGI("Calling NetworkCore.GiveItem with BadNerdItem...");
+                        LOGI("Params: networkCore=%p, item=%p, count=1, sender=%p, msg=%p, callback=null", 
+                             g_NetworkCore, foundItem, senderStr, messageStr);
+                        
+                        // Call server method: GiveItem(BadNerdItem, count=1, senderName, message, callback)
+                        NetworkCoreGiveItem(g_NetworkCore, foundItem, 1, senderStr, messageStr, nullptr);
+                        
+                        LOGI("SUCCESS! Item request sent to server!");
+                        LOGI("Check your Inbox for: %s", itemNameToSpawn.c_str());
+                    } else {
+                        LOGI("ERROR: Item '%s' not found in loaded items!", itemNameToSpawn.c_str());
+                        LOGI("Try: Energy Drink, Apple, Steel Bat, etc.");
+                    }
                 } else {
                     LOGI("ERROR: NetworkCore instance not found!");
+                    LOGI("Make sure you are connected to the game server!");
                 }
             } else {
                 LOGI("ERROR: NetworkCoreGiveItem not initialized!");
@@ -371,7 +388,7 @@ ElfScanner g_il2cppELF;
 // ======================================
 #define RVA_GET_ITEM_BY_NAME     0x41C8D24  // AttackComponent.GetItemByName(string)
 #define RVA_ATTACK_COMPONENT_UPDATE  0x41CB458  // AttackComponent.Update()
-#define RVA_NETWORKCORE_GIVE_ITEM    0x305E744  // NetworkCore.GiveItemByName(string, int, string, string, callback)
+#define RVA_NETWORKCORE_GIVE_ITEM    0x302EC74  // NetworkCore.GiveItem(BadNerdItem, int, string, string, callback)
 
 // ======================================
 // Hack Thread
