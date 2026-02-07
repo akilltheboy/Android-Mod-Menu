@@ -1,0 +1,36 @@
+name: Build Android APK (Final Fix)
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. سحب الكود من المستودع
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. تجهيز الجافا (JDK 17)
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # 3. تجهيز NDK (ضروري عشان كود الـ C++ بتاعك)
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r21e
+
+      # 4. بناء ملف APK باستخدام أمر Gradle المباشر (تخطينا gradlew عشان نتفادى الخطأ)
+      - name: Build with Gradle
+        run: gradle assembleDebug --stacktrace --no-daemon
+
+      # 5. رفع ملف APK الناتج عشان تحمله
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mod-Menu-APK
+          path: app/build/outputs/apk/debug/*.apk
