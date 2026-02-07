@@ -411,16 +411,48 @@ void Update(void *instance) {
             void* cmdStr = Il2CppStringNew(serverCommand.c_str());
             LOGI("Command string: %p", cmdStr);
             
-            // Note: We need to create ExtensionRequest object
-            // For now, just log that we have SmartFox ready
-            LOGI("SmartFox ready at: %p", g_SmartFox);
-            LOGI("SmartFox_Send ready at: %p", SmartFox_Send);
-            LOGI("ExtensionRequest_ctor ready at: %p", ExtensionRequest_ctor);
+            // Find ExtensionRequest class and allocate object
+            if (g_ExtensionRequestClass == nullptr) {
+                void* domain = il2cpp_domain_get();
+                if (domain != nullptr) {
+                    size_t assembliesCount = 0;
+                    void** assemblies = il2cpp_domain_get_assemblies(domain, &assembliesCount);
+                    
+                    for (size_t i = 0; i < assembliesCount; i++) {
+                        void* image = il2cpp_assembly_get_image(assemblies[i]);
+                        if (image == nullptr) continue;
+                        
+                        // ExtensionRequest is in Sfs2X.Requests namespace
+                        void* extReqClass = il2cpp_class_from_name(image, "Sfs2X.Requests", "ExtensionRequest");
+                        if (extReqClass != nullptr) {
+                            g_ExtensionRequestClass = extReqClass;
+                            LOGI("Found ExtensionRequest class: %p", g_ExtensionRequestClass);
+                            break;
+                        }
+                    }
+                }
+            }
             
-            // TODO: Need to allocate ExtensionRequest and call constructor
-            // Then call SmartFox.Send(request)
-            
-            LOGI("Command infrastructure ready! Need ExtensionRequest allocation.");
+            if (g_ExtensionRequestClass != nullptr && il2cpp_object_new != nullptr && ExtensionRequest_ctor != nullptr) {
+                // Allocate new ExtensionRequest object
+                void* extRequest = il2cpp_object_new(g_ExtensionRequestClass);
+                LOGI("Allocated ExtensionRequest: %p", extRequest);
+                
+                if (extRequest != nullptr) {
+                    // Call constructor: ExtensionRequest(string cmd, ISFSObject params)
+                    // params can be null for simple commands
+                    ExtensionRequest_ctor(extRequest, cmdStr, nullptr);
+                    LOGI("ExtensionRequest initialized with command: %s", serverCommand.c_str());
+                    
+                    // Send via SmartFox!
+                    LOGI("Calling SmartFox.Send...");
+                    SmartFox_Send(g_SmartFox, extRequest);
+                    LOGI("=== COMMAND SENT TO SERVER! ===");
+                }
+            } else {
+                if (g_ExtensionRequestClass == nullptr) LOGE("ExtensionRequest class not found!");
+                if (il2cpp_object_new == nullptr) LOGE("il2cpp_object_new not available!");
+            }
         } else {
             if (g_SmartFox == nullptr) LOGE("SmartFox not found!");
             if (SmartFox_Send == nullptr) LOGE("SmartFox_Send not initialized!");
