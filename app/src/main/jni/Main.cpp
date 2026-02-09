@@ -840,10 +840,9 @@ void Update(void *instance) {
                 LOGI("Current Room ID: %d", roomId);
             }
             
-            // Use fixed username from player account
-            // TODO: Find correct offset for MySelf.Name extraction
-            std::string myUsername = "kjhgasdj16s11";
-            LOGI("Using fixed username: %s", myUsername.c_str());
+            // Use "VNL Entertainment" as sender (like legitimate packets!)
+            std::string myUsername = "VNL Entertainment";
+            LOGI("Using sender: %s", myUsername.c_str());
             
             // Build message body with item info
             std::string subject = "*NEW* Gift - " + inboxItemName;
