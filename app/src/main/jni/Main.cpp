@@ -119,6 +119,7 @@ jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
             OBFUSCATE("Collapse_🌐 Server Console"),
             OBFUSCATE("CollapseAdd_InputText_Server Command"),
             OBFUSCATE("CollapseAdd_Button_📡 Send Command"),
+            OBFUSCATE("CollapseAdd_Button_🔍 Server Info"),
             
             // Combat Hacks
             OBFUSCATE("Collapse_⚔️ Combat Hacks"),
@@ -200,17 +201,64 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
             }
             break;
             
-        case 7: // God Mode Toggle
+        case 7: // Server Info Button - Scan SmartFox for connection details
+            LOGI("=== SCANNING SERVER CONNECTION INFO ===");
+            if (g_SmartFox != nullptr) {
+                LOGI("SmartFox instance: %p", g_SmartFox);
+                
+                // Scan SmartFox object for string pointers (IP/hostname)
+                LOGI("--- Scanning for strings (possible IP/hostname) ---");
+                for (int offset = 0; offset < 0x200; offset += 8) {
+                    void* ptr = *(void**)((uintptr_t)g_SmartFox + offset);
+                    if (ptr != nullptr) {
+                        // Check if it looks like an Il2CppString
+                        int possibleLen = *(int*)((uintptr_t)ptr + 0x10);
+                        if (possibleLen > 3 && possibleLen < 256) {
+                            char16_t* possibleChars = (char16_t*)((uintptr_t)ptr + 0x14);
+                            // Check first char is printable ASCII
+                            if (possibleChars[0] >= 32 && possibleChars[0] < 127) {
+                                char strBuf[257] = {0};
+                                bool hasLetter = false;
+                                for (int i = 0; i < possibleLen && i < 256; i++) {
+                                    strBuf[i] = (char)(possibleChars[i] & 0xFF);
+                                    if ((strBuf[i] >= 'a' && strBuf[i] <= 'z') || 
+                                        (strBuf[i] >= 'A' && strBuf[i] <= 'Z')) {
+                                        hasLetter = true;
+                                    }
+                                }
+                                if (hasLetter && strlen(strBuf) > 3) {
+                                    LOGI("[0x%X] String: %s", offset, strBuf);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Scan for port numbers (integers between 1000-65535)
+                LOGI("--- Scanning for port numbers ---");
+                for (int offset = 0; offset < 0x200; offset += 4) {
+                    int val = *(int*)((uintptr_t)g_SmartFox + offset);
+                    if (val >= 1000 && val <= 65535) {
+                        LOGI("[0x%X] Possible Port: %d", offset, val);
+                    }
+                }
+            } else {
+                LOGI("ERROR: SmartFox not initialized! Send a command first.");
+            }
+            LOGI("=== END SERVER SCAN ===");
+            break;
+            
+        case 8: // God Mode Toggle (was case 7)
             godModeEnabled = boolean;
             LOGI("God Mode: %s", godModeEnabled ? "ENABLED" : "DISABLED");
             break;
             
-        case 8: // Damage x10 Toggle
+        case 9: // Damage x10 Toggle (was case 8)
             damageMultiplierEnabled = boolean;
             LOGI("Damage x10: %s", damageMultiplierEnabled ? "ENABLED" : "DISABLED");
             break;
             
-        case 9: // Scan Health Button
+        case 10: // Scan Health Button (was case 9)
             LOGI("=== SCANNING FOR HEALTH VALUES ===");
             if (g_AttackComponent != nullptr) {
                 LOGI("AttackComponent: %p", g_AttackComponent);
