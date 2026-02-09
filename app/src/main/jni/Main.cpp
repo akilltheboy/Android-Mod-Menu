@@ -911,6 +911,44 @@ void Update(void *instance) {
                 LOGE("SFSObject creation failed!");
             }
             
+            // =========================================================
+            // STEP 2: Build OUTER wrapper params (LIKE LEGITIMATE!)
+            // The legitimate packet has:
+            // ROOT SFSObject:
+            // ├── 'c' (BYTE) = 1                    # System Controller
+            // ├── 'a' (SHORT) = 13                  # CALL_EXTENSION
+            // └── 'p' (SFSObject):                   # Parameters
+            //     ├── 'c' (STRING) = "c"             # Extension name
+            //     ├── 'r' (INT) = roomId             # Room ID
+            //     └── 'p' (SFSObject):               # Inner params (what we built!)
+            // =========================================================
+            void* wrapperParams = nullptr;
+            
+            if (SFSObject_NewInstance != nullptr) {
+                wrapperParams = SFSObject_NewInstance();
+                LOGI("Creating wrapper params...");
+                
+                // Add 'c' = "c" (extension name)
+                void* extNameKeyStr = Il2CppStringNew("c");
+                void* extNameValStr = Il2CppStringNew("c");
+                SFSObject_PutUtfString(wrapperParams, extNameKeyStr, extNameValStr);
+                LOGI("Added ext name: c");
+                
+                // Add 'r' = roomId (room ID)
+                void* roomIdKeyStr = Il2CppStringNew("r");
+                SFSObject_PutInt(wrapperParams, roomIdKeyStr, roomId);
+                LOGI("Added room ID: %d", roomId);
+                
+                // Add 'p' = sfsParams (inner extension params)
+                if (sfsParams != nullptr) {
+                    void* innerParamsKeyStr = Il2CppStringNew("p");
+                    SFSObject_PutSFSObject(wrapperParams, innerParamsKeyStr, sfsParams);
+                    LOGI("Added inner params wrapper");
+                }
+                
+                LOGI("Wrapper params ready!");
+            }
+            
             if (g_ExtensionRequestClass != nullptr && il2cpp_object_new != nullptr && ExtensionRequest_ctor != nullptr) {
                 // Allocate ExtensionRequest
                 void* extRequest = il2cpp_object_new(g_ExtensionRequestClass);
@@ -918,7 +956,8 @@ void Update(void *instance) {
                     LOGI("Allocated ExtensionRequest: %p", extRequest);
                     
                     // Call constructor: ExtensionRequest(string cmd, ISFSObject params)
-                    ExtensionRequest_ctor(extRequest, commandStr, sfsParams);
+                    // Use wrapperParams instead of sfsParams!
+                    ExtensionRequest_ctor(extRequest, commandStr, wrapperParams);
                     
                     LOGI("ExtensionRequest initialized with command: sendOfflineMessage");
                     LOGI("Params: %s", sfsParams != nullptr ? "SFSObject" : "NULL");
