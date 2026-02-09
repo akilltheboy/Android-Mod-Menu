@@ -111,6 +111,7 @@ SFSObject_NewInstance_t SFSObject_NewInstance = nullptr;
 SFSObject_PutUtfString_t SFSObject_PutUtfString = nullptr;
 SFSObject_PutBool_t SFSObject_PutBool = nullptr;
 SFSObject_PutShort_t SFSObject_PutShort = nullptr;
+SFSObject_PutInt_t SFSObject_PutInt = nullptr;
 SFSObject_PutSFSObject_t SFSObject_PutSFSObject = nullptr;
 SFSObject_PutSFSArray_t SFSObject_PutSFSArray = nullptr;
 void* g_SFSObjectClass = nullptr;
@@ -1070,6 +1071,7 @@ void *hack_thread(void *) {
     SFSObject_PutUtfString = (SFSObject_PutUtfString_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTUTFSTRING);
     SFSObject_PutBool = (SFSObject_PutBool_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTBOOL);
     SFSObject_PutShort = (SFSObject_PutShort_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTSHORT);
+    SFSObject_PutInt = (SFSObject_PutInt_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTINT);
     SFSObject_PutSFSObject = (SFSObject_PutSFSObject_t)getAbsoluteAddress(targetLibName, 0x24789F8);
     SFSObject_PutSFSArray = (SFSObject_PutSFSArray_t)getAbsoluteAddress(targetLibName, 0x2478948);
     
