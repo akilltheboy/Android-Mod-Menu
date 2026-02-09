@@ -88,6 +88,12 @@ void* g_ExtensionRequestClass = nullptr;
 void* g_GenericMessageRequestClass = nullptr;
 void* g_CurrentRoom = nullptr;
 
+// God Mode & Combat Hacks
+bool godModeEnabled = false;
+bool damageMultiplierEnabled = false;
+float savedMaxHealth = 100.0f;
+int damageMultiplier = 10;
+
 
 // ======================================
 // Feature List for Mod Menu
@@ -113,6 +119,12 @@ jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
             OBFUSCATE("Collapse_🌐 Server Console"),
             OBFUSCATE("CollapseAdd_InputText_Server Command"),
             OBFUSCATE("CollapseAdd_Button_📡 Send Command"),
+            
+            // Combat Hacks
+            OBFUSCATE("Collapse_⚔️ Combat Hacks"),
+            OBFUSCATE("CollapseAdd_Toggle_🛡️ God Mode"),
+            OBFUSCATE("CollapseAdd_Toggle_💪 Damage x10"),
+            OBFUSCATE("CollapseAdd_Button_🔍 Scan Health"),
             
             // Info
             OBFUSCATE("Category_ℹ️ Info"),
@@ -186,6 +198,34 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
                 sendCommandPressed = true;
                 LOGI("Send command pressed: %s", serverCommand.c_str());
             }
+            break;
+            
+        case 7: // God Mode Toggle
+            godModeEnabled = boolean;
+            LOGI("God Mode: %s", godModeEnabled ? "ENABLED" : "DISABLED");
+            break;
+            
+        case 8: // Damage x10 Toggle
+            damageMultiplierEnabled = boolean;
+            LOGI("Damage x10: %s", damageMultiplierEnabled ? "ENABLED" : "DISABLED");
+            break;
+            
+        case 9: // Scan Health Button
+            LOGI("=== SCANNING FOR HEALTH VALUES ===");
+            if (g_AttackComponent != nullptr) {
+                LOGI("AttackComponent: %p", g_AttackComponent);
+                // Scan first 0x200 bytes for float values that look like health
+                for (int offset = 0; offset < 0x200; offset += 4) {
+                    float val = *(float*)((uintptr_t)g_AttackComponent + offset);
+                    // Health is usually between 1 and 1000
+                    if (val > 0.0f && val < 10000.0f && val == (int)val) {
+                        LOGI("[0x%X] = %.1f", offset, val);
+                    }
+                }
+            } else {
+                LOGI("ERROR: AttackComponent not captured yet!");
+            }
+            LOGI("=== END SCAN ===");
             break;
     }
     
@@ -283,6 +323,34 @@ void Update(void *instance) {
         if (g_AttackComponent == nullptr) {
             g_AttackComponent = instance;
             LOGI("PlayerAttackComponent captured: %p", instance);
+        }
+        
+        // ============ GOD MODE ============
+        // Try common health offsets - these are typical Unity/IL2CPP patterns
+        // We'll try multiple offsets and set them all to high values
+        if (godModeEnabled && g_AttackComponent == instance) {
+            // Common health field offsets to try (different games use different offsets)
+            static const int healthOffsets[] = {
+                0x48, 0x4C, 0x50, 0x54, 0x58, 0x5C, 0x60, 0x64, 0x68, 0x6C,
+                0x70, 0x74, 0x78, 0x7C, 0x80, 0x84, 0x88, 0x8C, 0x90, 0x94,
+                0xA0, 0xA4, 0xA8, 0xAC, 0xB0, 0xB4, 0xB8, 0xBC, 0xC0, 0xC4
+            };
+            
+            for (int i = 0; i < sizeof(healthOffsets)/sizeof(healthOffsets[0]); i++) {
+                int offset = healthOffsets[i];
+                float* healthPtr = (float*)((uintptr_t)instance + offset);
+                float currentVal = *healthPtr;
+                
+                // If value looks like health (positive, not too high, getting lower means damage)
+                // Set it to max
+                if (currentVal > 0.0f && currentVal < savedMaxHealth) {
+                    // Someone took damage, restore to max
+                    *healthPtr = savedMaxHealth;
+                } else if (currentVal > savedMaxHealth && currentVal < 10000.0f) {
+                    // Found a higher max health, save it
+                    savedMaxHealth = currentVal;
+                }
+            }
         }
         
         // Handle Item Spawning - TRUE SPAWNER
