@@ -827,93 +827,10 @@ void Update(void *instance) {
                 LOGI("Current Room ID: %d", roomId);
             }
             
-            // Get our own username from SmartFox.MySelf.Name
-            // Try multiple offsets to find correct one
-            void* mySelf = *(void**)((uintptr_t)g_SmartFox + 0x60);
-            LOGI("MySelf pointer: %p", mySelf);
-            std::string myUsername = "Player";
-            
-            if (mySelf != nullptr) {
-                LOGI("Scanning for username in MySelf...");
-                // Scan for valid string at multiple offsets
-                bool found = false;
-                for (int offset = 0x10; offset <= 0x50 && !found; offset += 8) {
-                    void* namePtr = *(void**)((uintptr_t)mySelf + offset);
-                    LOGI("  Offset 0x%X: %p", offset, namePtr);
-                    if (namePtr != nullptr && namePtr != mySelf) {
-                        // Validate address is reasonable (not too high/low)
-                        uintptr_t addr = (uintptr_t)namePtr;
-                        if (addr < 0x100000000 && addr > 0x10000) {
-                            // Check if it looks like a valid Il2CppString
-                            int nameLen = *(int*)((uintptr_t)namePtr + 0x10);
-                            LOGI("    String length: %d", nameLen);
-                            if (nameLen > 0 && nameLen < 50 && nameLen < 200) {
-                                char16_t* chars = (char16_t*)((uintptr_t)namePtr + 0x14);
-                                if (chars != nullptr) {
-                                    char nameBuf[51] = {0};
-                                    for (int c = 0; c < nameLen && c < 50; c++) {
-                                        nameBuf[c] = (char)(chars[c] & 0xFF);
-                                    }
-                                    LOGI("    String: %s", nameBuf);
-                                    // Verify it looks like a username (alphanumeric)
-                                    bool valid = true;
-                                    for (int c = 0; c < nameLen && c < 50; c++) {
-                                        char ch = nameBuf[c];
-                                        if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))) {
-                                            valid = false;
-                                            break;
-                                        }
-                                    }
-                                    if (valid && nameLen >= 3) {
-                                        myUsername = nameBuf;
-                                        LOGI("Found username (offset 0x%X): %s", offset, myUsername.c_str());
-                                        found = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if (!found) {
-                    LOGE("Could not extract username - using default: %s", myUsername.c_str());
-                }
-            } else {
-                LOGE("MySelf is null!");
-                // Try scanning SmartFox object directly for username string
-                LOGI("Scanning SmartFox directly for username...");
-                for (int offset = 0x20; offset < 0x300 && myUsername == "Player"; offset += 8) {
-                    void* ptr = *(void**)((uintptr_t)g_SmartFox + offset);
-                    if (ptr != nullptr && ptr != g_SmartFox) {
-                        uintptr_t addr = (uintptr_t)ptr;
-                        if (addr < 0x100000000 && addr > 0x10000) {
-                            int nameLen = *(int*)((uintptr_t)ptr + 0x10);
-                            if (nameLen > 0 && nameLen < 50 && nameLen < 200) {
-                                char16_t* chars = (char16_t*)((uintptr_t)ptr + 0x14);
-                                if (chars != nullptr) {
-                                    char nameBuf[51] = {0};
-                                    for (int c = 0; c < nameLen && c < 50; c++) {
-                                        nameBuf[c] = (char)(chars[c] & 0xFF);
-                                    }
-                                    bool valid = true;
-                                    for (int c = 0; c < nameLen && c < 50; c++) {
-                                        char ch = nameBuf[c];
-                                        if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))) {
-                                            valid = false;
-                                            break;
-                                        }
-                                    }
-                                    if (valid && nameLen >= 3) {
-                                        myUsername = nameBuf;
-                                        LOGI("Found username (SmartFox offset 0x%X): %s", offset, myUsername.c_str());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            LOGI("Final username: %s", myUsername.c_str());
+            // Use fixed username from player account
+            // TODO: Find correct offset for MySelf.Name extraction
+            std::string myUsername = "kjhgasdj16s11";
+            LOGI("Using fixed username: %s", myUsername.c_str());
             
             // Build message body with item info
             std::string subject = "*NEW* Gift - " + inboxItemName;
