@@ -828,20 +828,70 @@ void Update(void *instance) {
             }
             
             // Get our own username from SmartFox.MySelf.Name
+            // Try multiple offsets to find correct one
             void* mySelf = *(void**)((uintptr_t)g_SmartFox + 0x60);
             std::string myUsername = "Player";
+            
             if (mySelf != nullptr) {
-                void* namePtr = *(void**)((uintptr_t)mySelf + 0x10);
-                if (namePtr != nullptr) {
-                    int nameLen = *(int*)((uintptr_t)namePtr + 0x10);
-                    if (nameLen > 0 && nameLen < 100) {
-                        char16_t* chars = (char16_t*)((uintptr_t)namePtr + 0x14);
-                        char nameBuf[101] = {0};
-                        for (int c = 0; c < nameLen && c < 100; c++) {
-                            nameBuf[c] = (char)(chars[c] & 0xFF);
+                // Scan for valid string at multiple offsets
+                bool found = false;
+                for (int offset = 0x10; offset <= 0x30 && !found; offset += 4) {
+                    void* namePtr = *(void**)((uintptr_t)mySelf + offset);
+                    if (namePtr != nullptr) {
+                        // Check if it looks like a valid Il2CppString
+                        int nameLen = *(int*)((uintptr_t)namePtr + 0x10);
+                        if (nameLen > 0 && nameLen < 50) {
+                            char16_t* chars = (char16_t*)((uintptr_t)namePtr + 0x14);
+                            char nameBuf[51] = {0};
+                            for (int c = 0; c < nameLen && c < 50; c++) {
+                                nameBuf[c] = (char)(chars[c] & 0xFF);
+                            }
+                            // Verify it looks like a username (alphanumeric)
+                            bool valid = true;
+                            for (int c = 0; c < nameLen && c < 50; c++) {
+                                char ch = nameBuf[c];
+                                if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))) {
+                                    valid = false;
+                                    break;
+                                }
+                            }
+                            if (valid && nameLen >= 3) {
+                                myUsername = nameBuf;
+                                LOGI("My username (offset 0x%X): %s", offset, myUsername.c_str());
+                                found = true;
+                            }
                         }
-                        myUsername = nameBuf;
-                        LOGI("My username: %s", myUsername.c_str());
+                    }
+                }
+                if (!found) {
+                    LOGE("Could not extract username - using default");
+                }
+            } else {
+                LOGE("MySelf is null - trying direct scan");
+                // Try scanning SmartFox object directly for username string
+                for (int offset = 0x20; offset < 0x100 && myUsername == "Player"; offset += 8) {
+                    void* ptr = *(void**)((uintptr_t)g_SmartFox + offset);
+                    if (ptr != nullptr) {
+                        int nameLen = *(int*)((uintptr_t)ptr + 0x10);
+                        if (nameLen > 0 && nameLen < 50) {
+                            char16_t* chars = (char16_t*)((uintptr_t)ptr + 0x14);
+                            char nameBuf[51] = {0};
+                            for (int c = 0; c < nameLen && c < 50; c++) {
+                                nameBuf[c] = (char)(chars[c] & 0xFF);
+                            }
+                            bool valid = true;
+                            for (int c = 0; c < nameLen && c < 50; c++) {
+                                char ch = nameBuf[c];
+                                if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))) {
+                                    valid = false;
+                                    break;
+                                }
+                            }
+                            if (valid && nameLen >= 3) {
+                                myUsername = nameBuf;
+                                LOGI("My username (SmartFox offset 0x%X): %s", offset, myUsername.c_str());
+                            }
+                        }
                     }
                 }
             }
