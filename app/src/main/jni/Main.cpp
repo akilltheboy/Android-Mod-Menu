@@ -847,22 +847,37 @@ void Update(void *instance) {
             void* subjectStr = Il2CppStringNew(subject.c_str());
             void* msgBodyStr = Il2CppStringNew(msgBody.c_str());
             
-            // Create SFSObject params - COMMENTED OUT FOR TESTING
-            // Send with nullptr params first to test if crash is in SFSObject functions
+            // Create SFSObject params - Adding params ONE BY ONE
             void* sfsParams = nullptr;
             
-            LOGI("Sending ExtensionRequest with NULL params (testing for crash)...");
-            
-            // If we want to add params later, uncomment this block:
-            /*
-            if (SFSObject_NewInstance != nullptr) {
+            if (SFSObject_NewInstance != nullptr && SFSObject_PutUtfString != nullptr) {
                 sfsParams = SFSObject_NewInstance();
                 if (sfsParams != nullptr) {
                     LOGI("Created SFSObject params: %p", sfsParams);
-                    // Add params here...
+                    
+                    // STEP 1: Add toId parameter ONLY
+                    void* toIdKeyStr = Il2CppStringNew("toId");
+                    SFSObject_PutUtfString(sfsParams, toIdKeyStr, toIdStr);
+                    LOGI("Added toId param: %s", myUsername.c_str());
+                    
+                    // STEP 2: Add subject (commented out for now)
+                    // void* subjectKeyStr = Il2CppStringNew("subject");
+                    // SFSObject_PutUtfString(sfsParams, subjectKeyStr, subjectStr);
+                    
+                    // STEP 3: Add msgBody (commented out for now)
+                    // void* msgBodyKeyStr = Il2CppStringNew("msgBody");
+                    // SFSObject_PutUtfString(sfsParams, msgBodyKeyStr, msgBodyStr);
+                    
+                    // STEP 4: Add action ID (commented out for now)
+                    // SFSObject_PutShort(sfsParams, actionKeyStr, 22);
+                    
+                    // STEP 5: Add isClanMsg (commented out for now)
+                    // SFSObject_PutBool(sfsParams, isClanMsgKeyStr, false);
                 }
+            } else {
+                LOGE("SFSObject functions not available!");
+                sfsParams = nullptr;
             }
-            */
             
             if (g_ExtensionRequestClass != nullptr && il2cpp_object_new != nullptr && ExtensionRequest_ctor != nullptr) {
                 // Allocate ExtensionRequest
