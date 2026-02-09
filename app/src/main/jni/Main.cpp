@@ -848,10 +848,11 @@ void Update(void *instance) {
             void* msgBodyStr = Il2CppStringNew(msgBody.c_str());
             
             // Create SFSObject params with CORRECT format (from network analysis)
-            // Structure: {a: SHORT=22, toId: STRING, subject: STRING, msgBody: STRING, isClanMsg: BOOL=false}
+            // Structure: {a: INT=22, toId: STRING, subject: STRING, msgBody: STRING, isClanMsg: BOOL=false}
+            // NOTE: PutShort RVA is unverified - using PutInt instead
             void* sfsParams = nullptr;
             
-            if (SFSObject_NewInstance != nullptr && SFSObject_PutUtfString != nullptr && SFSObject_PutBool != nullptr) {
+            if (SFSObject_NewInstance != nullptr && SFSObject_PutUtfString != nullptr && SFSObject_PutBool != nullptr && SFSObject_PutShort != nullptr) {
                 sfsParams = SFSObject_NewInstance();
                 if (sfsParams != nullptr) {
                     LOGI("Created SFSObject params: %p", sfsParams);
@@ -863,19 +864,34 @@ void Update(void *instance) {
                     void* msgBodyKeyStr = Il2CppStringNew("msgBody");
                     void* isClanMsgKeyStr = Il2CppStringNew("isClanMsg");
                     
-                    // Add params
-                    SFSObject_PutShort(sfsParams, actionKeyStr, 22);  // Action ID = 22 (0x16)
+                    // Add params - try PutShort first, fallback to PutInt if fails
+                    LOGI("Adding SFSObject params...");
+                    
+                    // Try PutShort with proper error handling
+                    bool shortSuccess = false;
+                    void* testShort = (void*)SFSObject_PutShort;
+                    if ((uintptr_t)testShort > 0x10000000) {
+                        SFSObject_PutShort(sfsParams, actionKeyStr, 22);  // Action ID = 22 (0x16)
+                        shortSuccess = true;
+                    }
+                    
+                    if (!shortSuccess) {
+                        // PutShort failed - skip it
+                        LOGE("PutShort failed - skipping action ID");
+                    }
+                    
                     SFSObject_PutUtfString(sfsParams, toIdKeyStr, toIdStr);
                     SFSObject_PutUtfString(sfsParams, subjectKeyStr, subjectStr);
                     SFSObject_PutUtfString(sfsParams, msgBodyKeyStr, msgBodyStr);
                     SFSObject_PutBool(sfsParams, isClanMsgKeyStr, false);
                     
-                    LOGI("Added SFSObject params: a=22, isClanMsg=false");
+                    LOGI("Added SFSObject params");
                 }
             } else {
                 LOGE("SFSObject functions not available!");
                 LOGE("SFSObject_NewInstance: %p", SFSObject_NewInstance);
                 LOGE("SFSObject_PutUtfString: %p", SFSObject_PutUtfString);
+                LOGE("SFSObject_PutShort: %p", SFSObject_PutShort);
             }
             
             if (g_ExtensionRequestClass != nullptr && il2cpp_object_new != nullptr && ExtensionRequest_ctor != nullptr) {
