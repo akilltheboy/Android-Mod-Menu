@@ -201,47 +201,26 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
             }
             break;
             
-        case 7: // Server Info Button - Scan SmartFox for connection details
+        case 7: // Server Info Button - Safe scan for connection details
             LOGI("=== SCANNING SERVER CONNECTION INFO ===");
             if (g_SmartFox != nullptr) {
                 LOGI("SmartFox instance: %p", g_SmartFox);
                 
-                // Scan SmartFox object for string pointers (IP/hostname)
-                LOGI("--- Scanning for strings (possible IP/hostname) ---");
-                for (int offset = 0; offset < 0x200; offset += 8) {
-                    void* ptr = *(void**)((uintptr_t)g_SmartFox + offset);
-                    if (ptr != nullptr) {
-                        // Check if it looks like an Il2CppString
-                        int possibleLen = *(int*)((uintptr_t)ptr + 0x10);
-                        if (possibleLen > 3 && possibleLen < 256) {
-                            char16_t* possibleChars = (char16_t*)((uintptr_t)ptr + 0x14);
-                            // Check first char is printable ASCII
-                            if (possibleChars[0] >= 32 && possibleChars[0] < 127) {
-                                char strBuf[257] = {0};
-                                bool hasLetter = false;
-                                for (int i = 0; i < possibleLen && i < 256; i++) {
-                                    strBuf[i] = (char)(possibleChars[i] & 0xFF);
-                                    if ((strBuf[i] >= 'a' && strBuf[i] <= 'z') || 
-                                        (strBuf[i] >= 'A' && strBuf[i] <= 'Z')) {
-                                        hasLetter = true;
-                                    }
-                                }
-                                if (hasLetter && strlen(strBuf) > 3) {
-                                    LOGI("[0x%X] String: %s", offset, strBuf);
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Scan for port numbers (integers between 1000-65535)
+                // Only scan for port numbers (safe - just reading ints from the object)
                 LOGI("--- Scanning for port numbers ---");
-                for (int offset = 0; offset < 0x200; offset += 4) {
+                for (int offset = 0; offset < 0x100; offset += 4) {
                     int val = *(int*)((uintptr_t)g_SmartFox + offset);
                     if (val >= 1000 && val <= 65535) {
                         LOGI("[0x%X] Possible Port: %d", offset, val);
                     }
                 }
+                
+                // Log NetworkCore instance too
+                if (g_NetworkCore != nullptr) {
+                    LOGI("NetworkCore instance: %p", g_NetworkCore);
+                }
+                
+                LOGI("TIP: Use Wireshark/tcpdump to capture actual traffic!");
             } else {
                 LOGI("ERROR: SmartFox not initialized! Send a command first.");
             }
@@ -346,11 +325,15 @@ void SmartFox_Send_Hook(void* smartFox, void* request) {
                     for (int i = 0; i < strLen && i < 512; i++) {
                         msgBuf[i] = (char)chars[i];
                     }
-                    LOGI("=== CHAT MESSAGE: '%s' ===", msgBuf);
                     
-                    // Check if it's a command (starts with /)
-                    if (msgBuf[0] == '/') {
-                        LOGI(">>> COMMAND DETECTED! <<<");
+                    // Skip /vnlPing spam - only log user commands
+                    if (strncmp(msgBuf, "/vnlPing", 8) != 0) {
+                        LOGI("=== CHAT MESSAGE: '%s' ===", msgBuf);
+                        
+                        // Check if it's a command (starts with /)
+                        if (msgBuf[0] == '/') {
+                            LOGI(">>> COMMAND DETECTED! <<<");
+                        }
                     }
                 }
             }
