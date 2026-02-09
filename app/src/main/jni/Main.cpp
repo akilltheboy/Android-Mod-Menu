@@ -172,6 +172,10 @@ jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
             OBFUSCATE("CollapseAdd_Toggle_💪 Damage x10"),
             OBFUSCATE("CollapseAdd_Button_🔍 Scan Health"),
             
+            // Admin Bypass - Set admin level to access admin commands!
+            OBFUSCATE("Collapse_👑 Admin Bypass"),
+            OBFUSCATE("CollapseAdd_Toggle_🚀 Enable Admin"),
+            
             // Info
             OBFUSCATE("Category_ℹ️ Info"),
             OBFUSCATE("RichTextView_<b>Use /sendItemz [item] to spawn!</b>"),
@@ -313,6 +317,43 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
                 LOGI("ERROR: AttackComponent not captured yet!");
             }
             LOGI("=== END SCAN ===");
+            break;
+            
+        case 13: // Admin Bypass Toggle
+            if (boolean) {
+                LOGI("=== ENABLING ADMIN BYPASS ===");
+                // Set adminLevel to 999 (max admin)
+                // AttackComponent IS PlayerData, so we can modify directly!
+                if (g_AttackComponent != nullptr) {
+                    // adminLevel is at offset 0x154 in PlayerData (which AttackComponent extends)
+                    int* adminLevelPtr = (int*)((uintptr_t)g_AttackComponent + 0x154);
+                    int oldLevel = *adminLevelPtr;
+                    *adminLevelPtr = 999; // Max admin level
+                    LOGI("adminLevel changed: %d -> %d", oldLevel, *adminLevelPtr);
+                    
+                    // Also set isAdmin = true (offset 0x28 in NetworkCore)
+                    if (g_NetworkCore != nullptr) {
+                        bool* isAdminPtr = (bool*)((uintptr_t)g_NetworkCore + 0x28);
+                        bool oldAdmin = *isAdminPtr;
+                        *isAdminPtr = true;
+                        LOGI("isAdmin changed: %s -> true", oldAdmin ? "true" : "false");
+                    }
+                    
+                    LOGI("ADMIN BYPASS ENABLED! You now have admin permissions!");
+                    LOGI("Try using admin commands like /spawnItem, /giveCoins, etc.");
+                } else {
+                    LOGI("ERROR: AttackComponent not captured yet!");
+                }
+            } else {
+                LOGI("=== DISABLING ADMIN BYPASS ===");
+                // Disable admin
+                if (g_NetworkCore != nullptr) {
+                    bool* isAdminPtr = (bool*)((uintptr_t)g_NetworkCore + 0x28);
+                    *isAdminPtr = false;
+                    LOGI("isAdmin set to false");
+                }
+                LOGI("Admin bypass disabled");
+            }
             break;
     }
     
