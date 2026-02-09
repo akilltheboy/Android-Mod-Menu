@@ -846,7 +846,7 @@ void Update(void *instance) {
             
             // Build message body with item info
             std::string subject = "*NEW* Gift - " + inboxItemName;
-            std::string msgBody = "You received: " + inboxItemName + "\n\nFrom: VNL Entertainment";
+            std::string msgBody = "[MOD] You received: " + inboxItemName + " - From VNL Entertainment";
             
             LOGI("Preparing sendOfflineMessage...");
             LOGI("  toId: %s", myUsername.c_str());
