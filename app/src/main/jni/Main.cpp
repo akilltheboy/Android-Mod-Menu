@@ -861,10 +861,36 @@ void Update(void *instance) {
             void* subjectStr = Il2CppStringNew(subject.c_str());
             void* msgBodyStr = Il2CppStringNew(msgBody.c_str());
             
-            // NOTE: SFSObject RVAs from old dump cause CRASH!
-            // Sending without params for now - server may still accept
+            // Create SFSObject params with CORRECT format (from network analysis)
+            // Structure: {a: SHORT=22, toId: STRING, subject: STRING, msgBody: STRING, isClanMsg: BOOL=false}
             void* sfsParams = nullptr;
-            LOGI("Sending ExtensionRequest WITHOUT params (SFSObject RVAs invalid)");
+            
+            if (SFSObject_NewInstance != nullptr && SFSObject_PutUtfString != nullptr && SFSObject_PutBool != nullptr) {
+                sfsParams = SFSObject_NewInstance();
+                if (sfsParams != nullptr) {
+                    LOGI("Created SFSObject params: %p", sfsParams);
+                    
+                    // Get action ID key string
+                    void* actionKeyStr = Il2CppStringNew("a");
+                    void* toIdKeyStr = Il2CppStringNew("toId");
+                    void* subjectKeyStr = Il2CppStringNew("subject");
+                    void* msgBodyKeyStr = Il2CppStringNew("msgBody");
+                    void* isClanMsgKeyStr = Il2CppStringNew("isClanMsg");
+                    
+                    // Add params
+                    SFSObject_PutShort(sfsParams, actionKeyStr, 22);  // Action ID = 22 (0x16)
+                    SFSObject_PutUtfString(sfsParams, toIdKeyStr, toIdStr);
+                    SFSObject_PutUtfString(sfsParams, subjectKeyStr, subjectStr);
+                    SFSObject_PutUtfString(sfsParams, msgBodyKeyStr, msgBodyStr);
+                    SFSObject_PutBool(sfsParams, isClanMsgKeyStr, false);
+                    
+                    LOGI("Added SFSObject params: a=22, isClanMsg=false");
+                }
+            } else {
+                LOGE("SFSObject functions not available!");
+                LOGE("SFSObject_NewInstance: %p", SFSObject_NewInstance);
+                LOGE("SFSObject_PutUtfString: %p", SFSObject_PutUtfString);
+            }
             
             if (g_ExtensionRequestClass != nullptr && il2cpp_object_new != nullptr && ExtensionRequest_ctor != nullptr) {
                 // Allocate ExtensionRequest
@@ -876,9 +902,7 @@ void Update(void *instance) {
                     ExtensionRequest_ctor(extRequest, commandStr, sfsParams);
                     
                     LOGI("ExtensionRequest initialized with command: sendOfflineMessage");
-                    if (sfsParams != nullptr) {
-                        LOGI("With SFSObject params");
-                    }
+                    LOGI("Params: %s", sfsParams != nullptr ? "SFSObject" : "NULL");
                     LOGI("Sending via SmartFox.Send...");
                     
                     SmartFox_Send(g_SmartFox, extRequest);
