@@ -860,34 +860,10 @@ void Update(void *instance) {
             void* subjectStr = Il2CppStringNew(subject.c_str());
             void* msgBodyStr = Il2CppStringNew(msgBody.c_str());
             
-            // Create ISFSObject with parameters
+            // NOTE: SFSObject RVAs from old dump cause CRASH!
+            // Sending without params for now - server may still accept
             void* sfsParams = nullptr;
-            
-            if (SFSObject_NewInstance != nullptr && SFSObject_PutUtfString != nullptr && SFSObject_PutBool != nullptr) {
-                LOGI("Creating SFSObject for params...");
-                sfsParams = SFSObject_NewInstance();
-                if (sfsParams != nullptr) {
-                    LOGI("SFSObject created: %p", sfsParams);
-                    
-                    // Put parameters: toId, subject, msgBody, isClanMsg
-                    void* keyToId = Il2CppStringNew("toId");
-                    void* keySubject = Il2CppStringNew("subject");
-                    void* keyMsgBody = Il2CppStringNew("msgBody");
-                    void* keyIsClanMsg = Il2CppStringNew("isClanMsg");
-                    
-                    SFSObject_PutUtfString(sfsParams, keyToId, toIdStr);
-                    SFSObject_PutUtfString(sfsParams, keySubject, subjectStr);
-                    SFSObject_PutUtfString(sfsParams, keyMsgBody, msgBodyStr);
-                    SFSObject_PutBool(sfsParams, keyIsClanMsg, false);
-                    
-                    LOGI("SFSObject populated with toId, subject, msgBody, isClanMsg");
-                } else {
-                    LOGE("Failed to create SFSObject!");
-                }
-            } else {
-                LOGI("SFSObject methods not available, sending without params");
-                LOGI("SFSObject_NewInstance: %p", SFSObject_NewInstance);
-            }
+            LOGI("Sending ExtensionRequest WITHOUT params (SFSObject RVAs invalid)");
             
             if (g_ExtensionRequestClass != nullptr && il2cpp_object_new != nullptr && ExtensionRequest_ctor != nullptr) {
                 // Allocate ExtensionRequest
