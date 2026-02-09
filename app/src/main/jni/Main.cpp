@@ -34,6 +34,11 @@ void* g_AttackComponent = nullptr;
 void* g_AllItemsArray = nullptr;
 int g_AllItemsCount = 0;
 
+// Inbox Sender - Send items via VNL Entertainment inbox
+bool sendInboxPressed = false;
+std::string inboxItemName = "";
+std::string inboxMessage = "*NEW* Gift - You got [1] ";
+
 // ======================================
 // Il2Cpp Type Definitions
 // ======================================
@@ -120,6 +125,11 @@ jobjectArray GetFeatureList(JNIEnv *env, jobject context) {
             OBFUSCATE("CollapseAdd_InputText_Server Command"),
             OBFUSCATE("CollapseAdd_Button_📡 Send Command"),
             OBFUSCATE("CollapseAdd_Button_🔍 Server Info"),
+            
+            // Inbox Item Sender (VNL Entertainment style)
+            OBFUSCATE("Collapse_📬 Inbox Sender"),
+            OBFUSCATE("CollapseAdd_InputText_Item to Send"),
+            OBFUSCATE("CollapseAdd_Button_📨 Send to Inbox"),
             
             // Combat Hacks
             OBFUSCATE("Collapse_⚔️ Combat Hacks"),
@@ -227,17 +237,32 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
             LOGI("=== END SERVER SCAN ===");
             break;
             
-        case 8: // God Mode Toggle (was case 7)
+        case 8: // Item to Send Input (Inbox)
+            if (text != nullptr && strlen(textChar) > 0) {
+                inboxItemName = textChar;
+                inboxMessage = "*NEW* Gift - You got [1] " + inboxItemName + "!";
+                LOGI("Inbox item set to: %s", inboxItemName.c_str());
+            }
+            break;
+            
+        case 9: // Send to Inbox Button
+            if (!inboxItemName.empty()) {
+                sendInboxPressed = true;
+                LOGI("Send to Inbox pressed for: %s", inboxItemName.c_str());
+            }
+            break;
+            
+        case 10: // God Mode Toggle
             godModeEnabled = boolean;
             LOGI("God Mode: %s", godModeEnabled ? "ENABLED" : "DISABLED");
             break;
             
-        case 9: // Damage x10 Toggle (was case 8)
+        case 11: // Damage x10 Toggle
             damageMultiplierEnabled = boolean;
             LOGI("Damage x10: %s", damageMultiplierEnabled ? "ENABLED" : "DISABLED");
             break;
             
-        case 10: // Scan Health Button (was case 9)
+        case 12: // Scan Health Button
             LOGI("=== SCANNING FOR HEALTH VALUES ===");
             if (g_AttackComponent != nullptr) {
                 LOGI("AttackComponent: %p", g_AttackComponent);
@@ -706,6 +731,104 @@ void Update(void *instance) {
         }
         
         LOGI("=== END SEND COMMAND ===");
+    }
+    
+    // Handle Send to Inbox - Uses /sendItemz chat command to trigger inbox delivery
+    if (sendInboxPressed) {
+        sendInboxPressed = false;
+        LOGI("=== SENDING ITEM TO INBOX ===");
+        LOGI("Item: %s", inboxItemName.c_str());
+        
+        // Build the /sendItemz command
+        std::string inboxCmd = "/sendItemz " + inboxItemName;
+        LOGI("Command: %s", inboxCmd.c_str());
+        
+        // Ensure we have SmartFox instance
+        if (g_SmartFox == nullptr && il2cpp_domain_get != nullptr) {
+            void* domain = il2cpp_domain_get();
+            if (domain != nullptr) {
+                size_t assembliesCount = 0;
+                void** assemblies = il2cpp_domain_get_assemblies(domain, &assembliesCount);
+                
+                for (size_t i = 0; i < assembliesCount; i++) {
+                    void* image = il2cpp_assembly_get_image(assemblies[i]);
+                    if (image == nullptr) continue;
+                    
+                    void* networkCoreClass = il2cpp_class_from_name(image, "", "NetworkCore");
+                    if (networkCoreClass != nullptr) {
+                        void* type = il2cpp_class_get_type(networkCoreClass);
+                        if (type != nullptr && FindObjectsOfTypeAll != nullptr) {
+                            void* typeObject = il2cpp_type_get_object(type);
+                            if (typeObject != nullptr) {
+                                void* instancesArray = FindObjectsOfTypeAll(typeObject);
+                                if (instancesArray != nullptr) {
+                                    int count = *(int*)((uintptr_t)instancesArray + 0x18);
+                                    if (count > 0) {
+                                        void** instances = (void**)((uintptr_t)instancesArray + 0x20);
+                                        g_NetworkCore = instances[0];
+                                        g_SmartFox = *(void**)((uintptr_t)g_NetworkCore + 0xA8);
+                                        LOGI("SmartFox found: %p", g_SmartFox);
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (g_SmartFox != nullptr && SmartFox_Send != nullptr && Il2CppStringNew != nullptr) {
+            // Create the /sendItemz command string
+            void* cmdStr = Il2CppStringNew(inboxCmd.c_str());
+            
+            // Find GenericMessageRequest class
+            if (g_GenericMessageRequestClass == nullptr) {
+                void* domain = il2cpp_domain_get();
+                if (domain != nullptr) {
+                    size_t assembliesCount = 0;
+                    void** assemblies = il2cpp_domain_get_assemblies(domain, &assembliesCount);
+                    
+                    for (size_t i = 0; i < assembliesCount; i++) {
+                        void* image = il2cpp_assembly_get_image(assemblies[i]);
+                        if (image == nullptr) continue;
+                        
+                        void* genMsgClass = il2cpp_class_from_name(image, "Sfs2X.Requests", "GenericMessageRequest");
+                        if (genMsgClass != nullptr) {
+                            g_GenericMessageRequestClass = genMsgClass;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Get current room
+            void* lastJoinedRoom = *(void**)((uintptr_t)g_SmartFox + 0x78);
+            
+            if (g_GenericMessageRequestClass != nullptr && il2cpp_object_new != nullptr && GenericMessageRequest_ctor != nullptr) {
+                // Create GenericMessageRequest
+                void* genMsgRequest = il2cpp_object_new(g_GenericMessageRequestClass);
+                if (genMsgRequest != nullptr) {
+                    GenericMessageRequest_ctor(genMsgRequest);
+                    
+                    // PUBLIC_MESSAGE = 0
+                    *(int*)((uintptr_t)genMsgRequest + 0x24) = 0;
+                    *(void**)((uintptr_t)genMsgRequest + 0x28) = lastJoinedRoom;
+                    *(void**)((uintptr_t)genMsgRequest + 0x30) = cmdStr;
+                    
+                    LOGI("Sending /sendItemz command via chat...");
+                    SmartFox_Send(g_SmartFox, genMsgRequest);
+                    LOGI("SUCCESS! Check your Inbox for: %s", inboxItemName.c_str());
+                    LOGI("From: VNL Entertainment");
+                }
+            } else {
+                LOGE("GenericMessageRequest not available!");
+            }
+        } else {
+            LOGE("SmartFox not initialized! Enter a room first.");
+        }
+        
+        LOGI("=== END INBOX SEND ===");
     }
     
     return old_Update(instance);
