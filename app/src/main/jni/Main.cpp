@@ -70,8 +70,20 @@ typedef void (*ExtensionRequest_ctor_t)(void* instance, void* cmd, void* params)
 // Then set fields manually: type at 0x24, room at 0x28, message at 0x30
 typedef void (*GenericMessageRequest_ctor_t)(void* instance);
 
+// SFSObject - For creating ISFSObject parameters (from old_mod dump)
+// SFSObject.NewInstance() - RVA: 0x608C04 (old) - need to find in current
+typedef void* (*SFSObject_NewInstance_t)();
+// SFSObject.PutUtfString(key, val) - RVA: 0x60A418 (old)
+typedef void (*SFSObject_PutUtfString_t)(void* sfsObj, void* key, void* val);
+// SFSObject.PutBool(key, val) - RVA: 0x609EFC (old)
+typedef void (*SFSObject_PutBool_t)(void* sfsObj, void* key, bool val);
+// SFSObject.PutShort(key, val) - RVA: 0x60A0AC (old)
+typedef void (*SFSObject_PutShort_t)(void* sfsObj, void* key, short val);
+
 // il2cpp_object_new to allocate new objects
 typedef void* (*il2cpp_object_new_t)(void* klass);
+
+
 
 Il2CppStringNew_t Il2CppStringNew = nullptr;
 GetItemByName_t GetItemByName = nullptr;
@@ -87,11 +99,19 @@ SmartFox_Send_t SmartFox_Send = nullptr;
 ExtensionRequest_ctor_t ExtensionRequest_ctor = nullptr;
 GenericMessageRequest_ctor_t GenericMessageRequest_ctor = nullptr;
 il2cpp_object_new_t il2cpp_object_new = nullptr;
+// SFSObject functions for creating ISFSObject params
+SFSObject_NewInstance_t SFSObject_NewInstance = nullptr;
+SFSObject_PutUtfString_t SFSObject_PutUtfString = nullptr;
+SFSObject_PutBool_t SFSObject_PutBool = nullptr;
+SFSObject_PutShort_t SFSObject_PutShort = nullptr;
+void* g_SFSObjectClass = nullptr;
+
 void* g_NetworkCore = nullptr;
 void* g_SmartFox = nullptr;
 void* g_ExtensionRequestClass = nullptr;
 void* g_GenericMessageRequestClass = nullptr;
 void* g_CurrentRoom = nullptr;
+
 
 // God Mode & Combat Hacks
 bool godModeEnabled = false;
@@ -733,17 +753,14 @@ void Update(void *instance) {
         LOGI("=== END SEND COMMAND ===");
     }
     
-    // Handle Send to Inbox - Uses /sendItemz chat command to trigger inbox delivery
+    // Handle Send to Inbox - Uses ExtensionRequest with sendOfflineMessage command
     if (sendInboxPressed) {
         sendInboxPressed = false;
-        LOGI("=== SENDING ITEM TO INBOX ===");
-        LOGI("Item: %s", inboxItemName.c_str());
+        LOGI("=== SENDING INBOX MESSAGE ===");
+        LOGI("Recipient: self (will send to your own inbox)");
+        LOGI("Item/Subject: %s", inboxItemName.c_str());
         
-        // Build the /sendItemz command
-        std::string inboxCmd = "/sendItemz " + inboxItemName;
-        LOGI("Command: %s", inboxCmd.c_str());
-        
-        // Ensure we have SmartFox instance
+        // Ensure we have SmartFox and NetworkCore instances
         if (g_SmartFox == nullptr && il2cpp_domain_get != nullptr) {
             void* domain = il2cpp_domain_get();
             if (domain != nullptr) {
@@ -779,11 +796,8 @@ void Update(void *instance) {
         }
         
         if (g_SmartFox != nullptr && SmartFox_Send != nullptr && Il2CppStringNew != nullptr) {
-            // Create the /sendItemz command string
-            void* cmdStr = Il2CppStringNew(inboxCmd.c_str());
-            
-            // Find GenericMessageRequest class
-            if (g_GenericMessageRequestClass == nullptr) {
+            // Find ExtensionRequest class
+            if (g_ExtensionRequestClass == nullptr) {
                 void* domain = il2cpp_domain_get();
                 if (domain != nullptr) {
                     size_t assembliesCount = 0;
@@ -793,36 +807,112 @@ void Update(void *instance) {
                         void* image = il2cpp_assembly_get_image(assemblies[i]);
                         if (image == nullptr) continue;
                         
-                        void* genMsgClass = il2cpp_class_from_name(image, "Sfs2X.Requests", "GenericMessageRequest");
-                        if (genMsgClass != nullptr) {
-                            g_GenericMessageRequestClass = genMsgClass;
+                        void* extReqClass = il2cpp_class_from_name(image, "Sfs2X.Requests", "ExtensionRequest");
+                        if (extReqClass != nullptr) {
+                            g_ExtensionRequestClass = extReqClass;
+                            LOGI("Found ExtensionRequest class: %p", g_ExtensionRequestClass);
                             break;
                         }
                     }
                 }
             }
             
-            // Get current room
+            // Get current room ID from SmartFox.LastJoinedRoom
             void* lastJoinedRoom = *(void**)((uintptr_t)g_SmartFox + 0x78);
+            int roomId = 0;
+            if (lastJoinedRoom != nullptr) {
+                // Room.Id is at offset 0x24
+                roomId = *(int*)((uintptr_t)lastJoinedRoom + 0x24);
+                LOGI("Current Room ID: %d", roomId);
+            }
             
-            if (g_GenericMessageRequestClass != nullptr && il2cpp_object_new != nullptr && GenericMessageRequest_ctor != nullptr) {
-                // Create GenericMessageRequest
-                void* genMsgRequest = il2cpp_object_new(g_GenericMessageRequestClass);
-                if (genMsgRequest != nullptr) {
-                    GenericMessageRequest_ctor(genMsgRequest);
+            // Get our own username from SmartFox.MySelf.Name
+            void* mySelf = *(void**)((uintptr_t)g_SmartFox + 0x60);
+            std::string myUsername = "Player";
+            if (mySelf != nullptr) {
+                void* namePtr = *(void**)((uintptr_t)mySelf + 0x10);
+                if (namePtr != nullptr) {
+                    int nameLen = *(int*)((uintptr_t)namePtr + 0x10);
+                    if (nameLen > 0 && nameLen < 100) {
+                        char16_t* chars = (char16_t*)((uintptr_t)namePtr + 0x14);
+                        char nameBuf[101] = {0};
+                        for (int c = 0; c < nameLen && c < 100; c++) {
+                            nameBuf[c] = (char)(chars[c] & 0xFF);
+                        }
+                        myUsername = nameBuf;
+                        LOGI("My username: %s", myUsername.c_str());
+                    }
+                }
+            }
+            
+            // Build message body with item info
+            std::string subject = "*NEW* Gift - " + inboxItemName;
+            std::string msgBody = "You received: " + inboxItemName + "\n\nFrom: VNL Entertainment";
+            
+            LOGI("Preparing sendOfflineMessage...");
+            LOGI("  toId: %s", myUsername.c_str());
+            LOGI("  subject: %s", subject.c_str());
+            LOGI("  msgBody: %s", msgBody.c_str());
+            
+            // Create strings
+            void* commandStr = Il2CppStringNew("sendOfflineMessage");
+            void* toIdStr = Il2CppStringNew(myUsername.c_str());
+            void* subjectStr = Il2CppStringNew(subject.c_str());
+            void* msgBodyStr = Il2CppStringNew(msgBody.c_str());
+            
+            // Create ISFSObject with parameters
+            void* sfsParams = nullptr;
+            
+            if (SFSObject_NewInstance != nullptr && SFSObject_PutUtfString != nullptr && SFSObject_PutBool != nullptr) {
+                LOGI("Creating SFSObject for params...");
+                sfsParams = SFSObject_NewInstance();
+                if (sfsParams != nullptr) {
+                    LOGI("SFSObject created: %p", sfsParams);
                     
-                    // PUBLIC_MESSAGE = 0
-                    *(int*)((uintptr_t)genMsgRequest + 0x24) = 0;
-                    *(void**)((uintptr_t)genMsgRequest + 0x28) = lastJoinedRoom;
-                    *(void**)((uintptr_t)genMsgRequest + 0x30) = cmdStr;
+                    // Put parameters: toId, subject, msgBody, isClanMsg
+                    void* keyToId = Il2CppStringNew("toId");
+                    void* keySubject = Il2CppStringNew("subject");
+                    void* keyMsgBody = Il2CppStringNew("msgBody");
+                    void* keyIsClanMsg = Il2CppStringNew("isClanMsg");
                     
-                    LOGI("Sending /sendItemz command via chat...");
-                    SmartFox_Send(g_SmartFox, genMsgRequest);
-                    LOGI("SUCCESS! Check your Inbox for: %s", inboxItemName.c_str());
-                    LOGI("From: VNL Entertainment");
+                    SFSObject_PutUtfString(sfsParams, keyToId, toIdStr);
+                    SFSObject_PutUtfString(sfsParams, keySubject, subjectStr);
+                    SFSObject_PutUtfString(sfsParams, keyMsgBody, msgBodyStr);
+                    SFSObject_PutBool(sfsParams, keyIsClanMsg, false);
+                    
+                    LOGI("SFSObject populated with toId, subject, msgBody, isClanMsg");
+                } else {
+                    LOGE("Failed to create SFSObject!");
                 }
             } else {
-                LOGE("GenericMessageRequest not available!");
+                LOGI("SFSObject methods not available, sending without params");
+                LOGI("SFSObject_NewInstance: %p", SFSObject_NewInstance);
+            }
+            
+            if (g_ExtensionRequestClass != nullptr && il2cpp_object_new != nullptr && ExtensionRequest_ctor != nullptr) {
+                // Allocate ExtensionRequest
+                void* extRequest = il2cpp_object_new(g_ExtensionRequestClass);
+                if (extRequest != nullptr) {
+                    LOGI("Allocated ExtensionRequest: %p", extRequest);
+                    
+                    // Call constructor: ExtensionRequest(string cmd, ISFSObject params)
+                    ExtensionRequest_ctor(extRequest, commandStr, sfsParams);
+                    
+                    LOGI("ExtensionRequest initialized with command: sendOfflineMessage");
+                    if (sfsParams != nullptr) {
+                        LOGI("With SFSObject params");
+                    }
+                    LOGI("Sending via SmartFox.Send...");
+                    
+                    SmartFox_Send(g_SmartFox, extRequest);
+                    
+                    LOGI("=== ExtensionRequest SENT! ===");
+                    LOGI("Check server response in logcat");
+                }
+            } else {
+                LOGE("ExtensionRequest class not found!");
+                LOGE("ExtensionRequest_ctor: %p", ExtensionRequest_ctor);
+                LOGE("g_ExtensionRequestClass: %p", g_ExtensionRequestClass);
             }
         } else {
             LOGE("SmartFox not initialized! Enter a room first.");
@@ -830,7 +920,9 @@ void Update(void *instance) {
         
         LOGI("=== END INBOX SEND ===");
     }
+
     
+
     return old_Update(instance);
 }
 
@@ -850,6 +942,10 @@ ElfScanner g_il2cppELF;
 #define RVA_SMARTFOX_SEND            0x29D25CC  // SmartFox.Send(IRequest request)
 #define RVA_EXTENSIONREQUEST_CTOR    0x245BDE0  // ExtensionRequest.ctor(string cmd, ISFSObject params)
 #define RVA_GENERICMESSAGE_CTOR      0x245C650  // GenericMessageRequest.ctor()
+#define RVA_SFSOBJECT_NEWINSTANCE    0x608C04   // SFSObject.NewInstance() - from old dump
+#define RVA_SFSOBJECT_PUTUTFSTRING   0x60A418   // SFSObject.PutUtfString(key, val) - from old dump
+#define RVA_SFSOBJECT_PUTBOOL        0x609EFC   // SFSObject.PutBool(key, val) - from old dump
+#define RVA_SFSOBJECT_PUTSHORT       0x60A0AC   // SFSObject.PutShort(key, val) - from old dump
 
 // ======================================
 // Hack Thread
@@ -906,6 +1002,15 @@ void *hack_thread(void *) {
     // Get GenericMessageRequest constructor (for chat-style commands like /sendItemz)
     GenericMessageRequest_ctor = (GenericMessageRequest_ctor_t)getAbsoluteAddress(targetLibName, RVA_GENERICMESSAGE_CTOR);
     LOGI("GenericMessageRequest_ctor at: %p", GenericMessageRequest_ctor);
+    
+    // Initialize SFSObject functions for creating params
+    SFSObject_NewInstance = (SFSObject_NewInstance_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_NEWINSTANCE);
+    SFSObject_PutUtfString = (SFSObject_PutUtfString_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTUTFSTRING);
+    SFSObject_PutBool = (SFSObject_PutBool_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTBOOL);
+    SFSObject_PutShort = (SFSObject_PutShort_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTSHORT);
+    LOGI("SFSObject_NewInstance at: %p", SFSObject_NewInstance);
+    LOGI("SFSObject_PutUtfString at: %p", SFSObject_PutUtfString);
+    LOGI("SFSObject_PutBool at: %p", SFSObject_PutBool);
     
     // Get il2cpp_object_new via dlsym for allocating new objects
     if (il2cppHandle != nullptr) {
