@@ -930,12 +930,13 @@ ElfScanner g_il2cppELF;
 #define RVA_SMARTFOX_SEND            0x29D25CC  // SmartFox.Send(IRequest request)
 #define RVA_EXTENSIONREQUEST_CTOR    0x245BDE0  // ExtensionRequest.ctor(string cmd, ISFSObject params)
 #define RVA_GENERICMESSAGE_CTOR      0x245C650  // GenericMessageRequest.ctor()
-// SFSObject RVAs - DISCOVERED BY CLINE 2026-02-09 (from dump.cs v1.891)
-#define RVA_SFSOBJECT_NEWINSTANCE    0x245B214   // SFSObject.NewInstance() - ✅ CORRECT
-#define RVA_SFSOBJECT_PUTUTFSTRING   0x2478528   // SFSObject.PutUtfString(key, val) - ✅ CORRECT
-#define RVA_SFSOBJECT_PUTBOOL        0x2478028   // SFSObject.PutBool(key, val) - ✅ CORRECT
-#define RVA_SFSOBJECT_PUTINT         0x24783C8   // SFSObject.PutInt(key, val) - ✅ CORRECT
-#define RVA_SFSOBJECT_PUTSHORT       0x60A0AC   // SFSObject.PutShort(key, val) - from old dump (unverified)
+// SFSObject RVAs - CORRECTED 2026-02-09 (from dump.cs v1.891)
+// Found that 0x2478528 was PutBoolArray, NOT PutUtfString!
+#define RVA_SFSOBJECT_NEWINSTANCE    0x245B214   // SFSObject.NewInstance()
+#define RVA_SFSOBJECT_PUTBOOL        0x2477D70   // PutBool(key, bool) - CORRECTED!
+#define RVA_SFSOBJECT_PUTSHORT       0x2477F40   // PutShort(key, short) - CORRECTED!
+#define RVA_SFSOBJECT_PUTINT         0x2478028   // PutInt(key, int) - CORRECTED!
+#define RVA_SFSOBJECT_PUTUTFSTRING   0x24783C8   // PutUtfString(key, string) - CORRECTED!
 
 // ======================================
 // Hack Thread
