@@ -80,6 +80,7 @@ typedef void (*SFSObject_PutBool_t)(void* sfsObj, void* key, bool val);
 // SFSObject.PutInt(key, val) - RVA: 0x24783C8 (DISCOVERED BY CLINE 2026-02-09)
 typedef void (*SFSObject_PutInt_t)(void* sfsObj, void* key, int val);
 typedef void (*SFSObject_PutShort_t)(void* sfsObj, void* key, short val);
+typedef void (*SFSObject_PutSFSObject_t)(void* sfsObj, void* key, void* innerSfsObj);
 
 // il2cpp_object_new to allocate new objects
 typedef void* (*il2cpp_object_new_t)(void* klass);
@@ -105,6 +106,7 @@ SFSObject_NewInstance_t SFSObject_NewInstance = nullptr;
 SFSObject_PutUtfString_t SFSObject_PutUtfString = nullptr;
 SFSObject_PutBool_t SFSObject_PutBool = nullptr;
 SFSObject_PutShort_t SFSObject_PutShort = nullptr;
+SFSObject_PutSFSObject_t SFSObject_PutSFSObject = nullptr;
 void* g_SFSObjectClass = nullptr;
 
 void* g_NetworkCore = nullptr;
@@ -879,10 +881,13 @@ void Update(void *instance) {
                 SFSObject_PutUtfString(sfsParams, msgBodyKeyStr, msgBodyStr);
                 LOGI("Added msgBody param");
                 
-                // Add action ID (a = 22)
+                // Add action ID (a = 22) - Using SFSObject nested structure
                 void* actionKeyStr = Il2CppStringNew("a");
-                SFSObject_PutShort(sfsParams, actionKeyStr, 22);
-                LOGI("Added action param: a=22");
+                void* actionSfsObj = SFSObject_NewInstance();
+                void* actionInnerKeyStr = Il2CppStringNew("a");
+                SFSObject_PutShort(actionSfsObj, actionInnerKeyStr, 22);
+                SFSObject_PutSFSObject(sfsParams, actionKeyStr, actionSfsObj);
+                LOGI("Added action param: a=22 (nested SFSObject)");
                 
                 // Add isClanMsg
                 void* isClanMsgKeyStr = Il2CppStringNew("isClanMsg");
@@ -1014,9 +1019,11 @@ void *hack_thread(void *) {
     SFSObject_PutUtfString = (SFSObject_PutUtfString_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTUTFSTRING);
     SFSObject_PutBool = (SFSObject_PutBool_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTBOOL);
     SFSObject_PutShort = (SFSObject_PutShort_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTSHORT);
+    SFSObject_PutSFSObject = (SFSObject_PutSFSObject_t)getAbsoluteAddress(targetLibName, 0x24789F8);
     LOGI("SFSObject_NewInstance at: %p", SFSObject_NewInstance);
     LOGI("SFSObject_PutUtfString at: %p", SFSObject_PutUtfString);
     LOGI("SFSObject_PutBool at: %p", SFSObject_PutBool);
+    LOGI("SFSObject_PutSFSObject at: %p", SFSObject_PutSFSObject);
     
     // Get il2cpp_object_new via dlsym for allocating new objects
     if (il2cppHandle != nullptr) {
