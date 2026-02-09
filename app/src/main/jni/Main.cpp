@@ -893,20 +893,42 @@ void Update(void *instance) {
                 LOGI("Added msgBody param");
                 
                 // Add action ID (a = 22) - Using SFSArray like legitimate packets!
+                LOGI("DEBUG: Creating SFSArray for action ID...");
                 void* actionKeyStr = Il2CppStringNew("a");
-                void* actionArray = SFSArray_NewInstance();
-                if (actionArray != nullptr && SFSArray_AddInt != nullptr) {
-                    SFSArray_AddInt(actionArray, 22);
-                    SFSObject_PutSFSArray(sfsParams, actionKeyStr, actionArray);
-                    LOGI("Added action param: a=22 (SFSArray)");
+                
+                if (SFSArray_NewInstance != nullptr) {
+                    void* actionArray = SFSArray_NewInstance();
+                    LOGI("DEBUG: SFSArray created: %p", actionArray);
+                    
+                    if (actionArray != nullptr && SFSArray_AddInt != nullptr) {
+                        LOGI("DEBUG: Calling SFSArray_AddInt...");
+                        SFSArray_AddInt(actionArray, 22);
+                        LOGI("DEBUG: SFSArray_AddInt succeeded");
+                        
+                        LOGI("DEBUG: Calling SFSObject_PutSFSArray...");
+                        SFSObject_PutSFSArray(sfsParams, actionKeyStr, actionArray);
+                        LOGI("DEBUG: SFSObject_PutSFSArray succeeded");
+                        
+                        LOGI("Added action param: a=22 (SFSArray)");
+                    } else {
+                        LOGE("DEBUG: SFSArray_AddInt is NULL, using fallback");
+                        goto fallback_sfsobject;
+                    }
                 } else {
-                    // Fallback to SFSObject if SFSArray fails
+                    LOGE("DEBUG: SFSArray_NewInstance is NULL, using fallback");
+                    goto fallback_sfsobject;
+                }
+                goto skip_fallback;
+                
+            fallback_sfsobject:
+                {
                     void* actionSfsObj = SFSObject_NewInstance();
                     void* actionInnerKeyStr = Il2CppStringNew("a");
                     SFSObject_PutShort(actionSfsObj, actionInnerKeyStr, 22);
                     SFSObject_PutSFSObject(sfsParams, actionKeyStr, actionSfsObj);
                     LOGI("Added action param: a=22 (nested SFSObject - fallback)");
                 }
+                skip_fallback::
                 
                 // Add isClanMsg
                 void* isClanMsgKeyStr = Il2CppStringNew("isClanMsg");
