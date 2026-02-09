@@ -81,6 +81,11 @@ typedef void (*SFSObject_PutBool_t)(void* sfsObj, void* key, bool val);
 typedef void (*SFSObject_PutInt_t)(void* sfsObj, void* key, int val);
 typedef void (*SFSObject_PutShort_t)(void* sfsObj, void* key, short val);
 typedef void (*SFSObject_PutSFSObject_t)(void* sfsObj, void* key, void* innerSfsObj);
+typedef void (*SFSObject_PutSFSArray_t)(void* sfsObj, void* key, void* innerSfsArray);
+
+// SFSArray for action ID
+typedef void* (*SFSArray_NewInstance_t)();
+typedef void (*SFSArray_AddInt_t)(void* sfsArray, int val);
 
 // il2cpp_object_new to allocate new objects
 typedef void* (*il2cpp_object_new_t)(void* klass);
@@ -107,7 +112,13 @@ SFSObject_PutUtfString_t SFSObject_PutUtfString = nullptr;
 SFSObject_PutBool_t SFSObject_PutBool = nullptr;
 SFSObject_PutShort_t SFSObject_PutShort = nullptr;
 SFSObject_PutSFSObject_t SFSObject_PutSFSObject = nullptr;
+SFSObject_PutSFSArray_t SFSObject_PutSFSArray = nullptr;
 void* g_SFSObjectClass = nullptr;
+
+// SFSArray functions for action ID
+SFSArray_NewInstance_t SFSArray_NewInstance = nullptr;
+SFSArray_AddInt_t SFSArray_AddInt = nullptr;
+void* g_SFSArrayClass = nullptr;
 
 void* g_NetworkCore = nullptr;
 void* g_SmartFox = nullptr;
@@ -881,13 +892,21 @@ void Update(void *instance) {
                 SFSObject_PutUtfString(sfsParams, msgBodyKeyStr, msgBodyStr);
                 LOGI("Added msgBody param");
                 
-                // Add action ID (a = 22) - Using SFSObject nested structure
+                // Add action ID (a = 22) - Using SFSArray like legitimate packets!
                 void* actionKeyStr = Il2CppStringNew("a");
-                void* actionSfsObj = SFSObject_NewInstance();
-                void* actionInnerKeyStr = Il2CppStringNew("a");
-                SFSObject_PutShort(actionSfsObj, actionInnerKeyStr, 22);
-                SFSObject_PutSFSObject(sfsParams, actionKeyStr, actionSfsObj);
-                LOGI("Added action param: a=22 (nested SFSObject)");
+                void* actionArray = SFSArray_NewInstance();
+                if (actionArray != nullptr && SFSArray_AddInt != nullptr) {
+                    SFSArray_AddInt(actionArray, 22);
+                    SFSObject_PutSFSArray(sfsParams, actionKeyStr, actionArray);
+                    LOGI("Added action param: a=22 (SFSArray)");
+                } else {
+                    // Fallback to SFSObject if SFSArray fails
+                    void* actionSfsObj = SFSObject_NewInstance();
+                    void* actionInnerKeyStr = Il2CppStringNew("a");
+                    SFSObject_PutShort(actionSfsObj, actionInnerKeyStr, 22);
+                    SFSObject_PutSFSObject(sfsParams, actionKeyStr, actionSfsObj);
+                    LOGI("Added action param: a=22 (nested SFSObject - fallback)");
+                }
                 
                 // Add isClanMsg
                 void* isClanMsgKeyStr = Il2CppStringNew("isClanMsg");
@@ -1020,10 +1039,19 @@ void *hack_thread(void *) {
     SFSObject_PutBool = (SFSObject_PutBool_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTBOOL);
     SFSObject_PutShort = (SFSObject_PutShort_t)getAbsoluteAddress(targetLibName, RVA_SFSOBJECT_PUTSHORT);
     SFSObject_PutSFSObject = (SFSObject_PutSFSObject_t)getAbsoluteAddress(targetLibName, 0x24789F8);
+    SFSObject_PutSFSArray = (SFSObject_PutSFSArray_t)getAbsoluteAddress(targetLibName, 0x2478948);
+    
+    // Initialize SFSArray functions for action ID (like legitimate packets!)
+    SFSArray_NewInstance = (SFSArray_NewInstance_t)getAbsoluteAddress(targetLibName, 0x24665BC);
+    SFSArray_AddInt = (SFSArray_AddInt_t)getAbsoluteAddress(targetLibName, 0x247B0D4);
+    
     LOGI("SFSObject_NewInstance at: %p", SFSObject_NewInstance);
     LOGI("SFSObject_PutUtfString at: %p", SFSObject_PutUtfString);
     LOGI("SFSObject_PutBool at: %p", SFSObject_PutBool);
     LOGI("SFSObject_PutSFSObject at: %p", SFSObject_PutSFSObject);
+    LOGI("SFSObject_PutSFSArray at: %p", SFSObject_PutSFSArray);
+    LOGI("SFSArray_NewInstance at: %p", SFSArray_NewInstance);
+    LOGI("SFSArray_AddInt at: %p", SFSArray_AddInt);
     
     // Get il2cpp_object_new via dlsym for allocating new objects
     if (il2cppHandle != nullptr) {
