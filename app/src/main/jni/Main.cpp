@@ -847,36 +847,36 @@ void Update(void *instance) {
             void* subjectStr = Il2CppStringNew(subject.c_str());
             void* msgBodyStr = Il2CppStringNew(msgBody.c_str());
             
-            // Create SFSObject params - Adding params ONE BY ONE
+            // TEMPORARILY REMOVED - Testing crash location
+            // Create SFSObject params
             void* sfsParams = nullptr;
             
-            if (SFSObject_NewInstance != nullptr && SFSObject_PutUtfString != nullptr) {
+            LOGI("DEBUG: About to call SFSObject_NewInstance...");
+            
+            if (SFSObject_NewInstance != nullptr) {
+                LOGI("DEBUG: SFSObject_NewInstance ptr: %p", SFSObject_NewInstance);
                 sfsParams = SFSObject_NewInstance();
-                if (sfsParams != nullptr) {
-                    LOGI("Created SFSObject params: %p", sfsParams);
-                    
-                    // STEP 1: Add toId parameter ONLY
-                    void* toIdKeyStr = Il2CppStringNew("toId");
-                    SFSObject_PutUtfString(sfsParams, toIdKeyStr, toIdStr);
-                    LOGI("Added toId param: %s", myUsername.c_str());
-                    
-                    // STEP 2: Add subject (commented out for now)
-                    // void* subjectKeyStr = Il2CppStringNew("subject");
-                    // SFSObject_PutUtfString(sfsParams, subjectKeyStr, subjectStr);
-                    
-                    // STEP 3: Add msgBody (commented out for now)
-                    // void* msgBodyKeyStr = Il2CppStringNew("msgBody");
-                    // SFSObject_PutUtfString(sfsParams, msgBodyKeyStr, msgBodyStr);
-                    
-                    // STEP 4: Add action ID (commented out for now)
-                    // SFSObject_PutShort(sfsParams, actionKeyStr, 22);
-                    
-                    // STEP 5: Add isClanMsg (commented out for now)
-                    // SFSObject_PutBool(sfsParams, isClanMsgKeyStr, false);
-                }
+                LOGI("DEBUG: SFSObject_NewInstance returned: %p", sfsParams);
             } else {
-                LOGE("SFSObject functions not available!");
-                sfsParams = nullptr;
+                LOGE("SFSObject_NewInstance is NULL!");
+            }
+            
+            if (sfsParams != nullptr) {
+                LOGI("DEBUG: About to call SFSObject_PutUtfString...");
+                LOGI("DEBUG: SFSObject_PutUtfString ptr: %p", SFSObject_PutUtfString);
+                
+                // Try PutUtfString with toId
+                void* toIdKeyStr = Il2CppStringNew("toId");
+                LOGI("DEBUG: toIdKeyStr: %p", toIdKeyStr);
+                LOGI("DEBUG: toIdStr: %p", toIdStr);
+                
+                // CRASH HAPPENS HERE!
+                SFSObject_PutUtfString(sfsParams, toIdKeyStr, toIdStr);
+                
+                LOGI("DEBUG: SFSObject_PutUtfString succeeded");
+                LOGI("Added toId param: %s", myUsername.c_str());
+            } else {
+                LOGE("SFSObject creation failed!");
             }
             
             if (g_ExtensionRequestClass != nullptr && il2cpp_object_new != nullptr && ExtensionRequest_ctor != nullptr) {
