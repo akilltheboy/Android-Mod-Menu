@@ -70,14 +70,15 @@ typedef void (*ExtensionRequest_ctor_t)(void* instance, void* cmd, void* params)
 // Then set fields manually: type at 0x24, room at 0x28, message at 0x30
 typedef void (*GenericMessageRequest_ctor_t)(void* instance);
 
-// SFSObject - For creating ISFSObject parameters (from old_mod dump)
-// SFSObject.NewInstance() - RVA: 0x608C04 (old) - need to find in current
+// SFSObject - For creating ISFSObject parameters (from dump.cs v1.891)
+// SFSObject.NewInstance() - RVA: 0x245B214 (DISCOVERED BY CLINE 2026-02-09)
 typedef void* (*SFSObject_NewInstance_t)();
-// SFSObject.PutUtfString(key, val) - RVA: 0x60A418 (old)
+// SFSObject.PutUtfString(key, val) - RVA: 0x2478528 (DISCOVERED BY CLINE 2026-02-09)
 typedef void (*SFSObject_PutUtfString_t)(void* sfsObj, void* key, void* val);
-// SFSObject.PutBool(key, val) - RVA: 0x609EFC (old)
+// SFSObject.PutBool(key, val) - RVA: 0x2478028 (DISCOVERED BY CLINE 2026-02-09)
 typedef void (*SFSObject_PutBool_t)(void* sfsObj, void* key, bool val);
-// SFSObject.PutShort(key, val) - RVA: 0x60A0AC (old)
+// SFSObject.PutInt(key, val) - RVA: 0x24783C8 (DISCOVERED BY CLINE 2026-02-09)
+typedef void (*SFSObject_PutInt_t)(void* sfsObj, void* key, int val);
 typedef void (*SFSObject_PutShort_t)(void* sfsObj, void* key, short val);
 
 // il2cpp_object_new to allocate new objects
@@ -918,10 +919,12 @@ ElfScanner g_il2cppELF;
 #define RVA_SMARTFOX_SEND            0x29D25CC  // SmartFox.Send(IRequest request)
 #define RVA_EXTENSIONREQUEST_CTOR    0x245BDE0  // ExtensionRequest.ctor(string cmd, ISFSObject params)
 #define RVA_GENERICMESSAGE_CTOR      0x245C650  // GenericMessageRequest.ctor()
-#define RVA_SFSOBJECT_NEWINSTANCE    0x608C04   // SFSObject.NewInstance() - from old dump
-#define RVA_SFSOBJECT_PUTUTFSTRING   0x60A418   // SFSObject.PutUtfString(key, val) - from old dump
-#define RVA_SFSOBJECT_PUTBOOL        0x609EFC   // SFSObject.PutBool(key, val) - from old dump
-#define RVA_SFSOBJECT_PUTSHORT       0x60A0AC   // SFSObject.PutShort(key, val) - from old dump
+// SFSObject RVAs - DISCOVERED BY CLINE 2026-02-09 (from dump.cs v1.891)
+#define RVA_SFSOBJECT_NEWINSTANCE    0x245B214   // SFSObject.NewInstance() - ✅ CORRECT
+#define RVA_SFSOBJECT_PUTUTFSTRING   0x2478528   // SFSObject.PutUtfString(key, val) - ✅ CORRECT
+#define RVA_SFSOBJECT_PUTBOOL        0x2478028   // SFSObject.PutBool(key, val) - ✅ CORRECT
+#define RVA_SFSOBJECT_PUTINT         0x24783C8   // SFSObject.PutInt(key, val) - ✅ CORRECT
+#define RVA_SFSOBJECT_PUTSHORT       0x60A0AC   // SFSObject.PutShort(key, val) - from old dump (unverified)
 
 // ======================================
 // Hack Thread
