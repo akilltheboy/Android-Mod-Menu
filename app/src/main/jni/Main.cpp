@@ -862,19 +862,34 @@ void Update(void *instance) {
             }
             
             if (sfsParams != nullptr) {
-                LOGI("DEBUG: About to call SFSObject_PutUtfString...");
-                LOGI("DEBUG: SFSObject_PutUtfString ptr: %p", SFSObject_PutUtfString);
+                LOGI("Adding SFSObject params...");
                 
-                // Try PutUtfString with toId
+                // Add toId
                 void* toIdKeyStr = Il2CppStringNew("toId");
-                LOGI("DEBUG: toIdKeyStr: %p", toIdKeyStr);
-                LOGI("DEBUG: toIdStr: %p", toIdStr);
-                
-                // CRASH HAPPENS HERE!
                 SFSObject_PutUtfString(sfsParams, toIdKeyStr, toIdStr);
-                
-                LOGI("DEBUG: SFSObject_PutUtfString succeeded");
                 LOGI("Added toId param: %s", myUsername.c_str());
+                
+                // Add subject
+                void* subjectKeyStr = Il2CppStringNew("subject");
+                SFSObject_PutUtfString(sfsParams, subjectKeyStr, subjectStr);
+                LOGI("Added subject param: %s", subject.c_str());
+                
+                // Add msgBody
+                void* msgBodyKeyStr = Il2CppStringNew("msgBody");
+                SFSObject_PutUtfString(sfsParams, msgBodyKeyStr, msgBodyStr);
+                LOGI("Added msgBody param");
+                
+                // Add action ID (a = 22)
+                void* actionKeyStr = Il2CppStringNew("a");
+                SFSObject_PutShort(sfsParams, actionKeyStr, 22);
+                LOGI("Added action param: a=22");
+                
+                // Add isClanMsg
+                void* isClanMsgKeyStr = Il2CppStringNew("isClanMsg");
+                SFSObject_PutBool(sfsParams, isClanMsgKeyStr, false);
+                LOGI("Added isClanMsg param: false");
+                
+                LOGI("All params added successfully!");
             } else {
                 LOGE("SFSObject creation failed!");
             }
