@@ -228,7 +228,8 @@ bool InjectItem(const std::string& itemName) {
         return false;
     }
     
-    void* blueprint = GetItemByName(nullptr, itemNameStr);
+    // Try with AttackComponent as instance (might need a valid object)
+    void* blueprint = GetItemByName(g_AttackComponent, itemNameStr);
     if (blueprint == nullptr) {
         LOGE("[PROTOCOL] ERROR: Item '%s' not found!", itemName.c_str());
         return false;
