@@ -1,9 +1,9 @@
 // ======================================
 // School of Chaos v1.891 - Protocol Migration
-// FINAL VERSION - Critical Fixes Applied
+// FINAL VERSION - Unity FindObjectOfType Implementation
 // 
-// FIX 1: int16 read for itemId (was reading int32 garbage)
-// FIX 2: Find InvDatabase instance (GetItemByName needs instance)
+// FIX 1: Unity FindObjectOfType for InvDatabase instance
+// FIX 2: int16 read for itemId (was reading int32 garbage)
 // FIX 3: Factory Pattern with correct RVA 0x477577C
 // FIX 4: Stability - capture once
 // ======================================
@@ -29,7 +29,6 @@ std::string targetItemName = "";
 bool injectItemPressed = false;
 void* g_AttackComponent = nullptr;
 void* g_NetworkCore = nullptr;
-void* g_InvDatabase = nullptr;
 void* g_InvGameItemClass = nullptr;
 
 // ======================================
@@ -45,6 +44,8 @@ typedef void** (*il2cpp_domain_get_assemblies_t)(void* domain, size_t* size);
 typedef void* (*il2cpp_assembly_get_image_t)(void* assembly);
 typedef void* (*il2cpp_type_get_object_t)(void* type);
 typedef void* (*il2cpp_object_new_t)(void* klass);
+typedef void* (*il2cpp_resolve_icall_t)(const char* name);
+typedef void* (*il2cpp_type_get_object_managed_t)(void* type);
 
 typedef void (*InvGameItemConstructor_t)(void* instance, int itemId, void* blueprint);
 typedef void (*NetworkCoreGiveItem_t)(void* networkCore, void* badNerdItem, int count, void* senderName, void* message, void* lastParam);
@@ -62,8 +63,13 @@ il2cpp_domain_get_assemblies_t il2cpp_domain_get_assemblies = nullptr;
 il2cpp_assembly_get_image_t il2cpp_assembly_get_image = nullptr;
 il2cpp_type_get_object_t il2cpp_type_get_object = nullptr;
 il2cpp_object_new_t il2cpp_object_new = nullptr;
+il2cpp_resolve_icall_t il2cpp_resolve_icall = nullptr;
+il2cpp_type_get_object_managed_t il2cpp_type_get_object_managed = nullptr;
 InvGameItemConstructor_t InvGameItemConstructor = nullptr;
 NetworkCoreGiveItem_t NetworkCoreGiveItem = nullptr;
+
+// Unity API
+void* (*UnityObject_FindObjectOfType)(void* type) = nullptr;
 
 // ======================================
 // Feature List
@@ -154,11 +160,15 @@ void* FindNetworkCoreInstance() {
 }
 
 // ======================================
-// Find InvDatabase Instance
+// Find InvDatabase Instance - Unity FindObjectOfType
 // ======================================
 void* FindInvDatabaseInstance() {
-    if (g_InvDatabase != nullptr) return g_InvDatabase;
-    if (il2cpp_domain_get == nullptr || FindObjectsOfTypeAll == nullptr) return nullptr;
+    if (UnityObject_FindObjectOfType == nullptr) {
+        LOGE("[INVDB] Unity FindObjectOfType not resolved!");
+        return nullptr;
+    }
+    
+    if (il2cpp_domain_get == nullptr || il2cpp_class_from_name == nullptr) return nullptr;
     
     void* domain = il2cpp_domain_get();
     if (domain == nullptr) return nullptr;
@@ -176,15 +186,11 @@ void* FindInvDatabaseInstance() {
             if (type != nullptr) {
                 void* typeObject = il2cpp_type_get_object(type);
                 if (typeObject != nullptr) {
-                    void* instancesArray = FindObjectsOfTypeAll(typeObject);
-                    if (instancesArray != nullptr) {
-                        int count = *(int*)((uintptr_t)instancesArray + 0x18);
-                        if (count > 0) {
-                            void** items = (void**)((uintptr_t)instancesArray + 0x20);
-                            g_InvDatabase = items[0];
-                            LOGI("[STABILITY] InvDatabase cached: %p", g_InvDatabase);
-                            return g_InvDatabase;
-                        }
+                    // Call UnityEngine.Object.FindObjectOfType(InvDatabase)
+                    void* instance = UnityObject_FindObjectOfType(typeObject);
+                    if (instance != nullptr) {
+                        LOGI("[INVDB] Found via FindObjectOfType: %p", instance);
+                        return instance;
                     }
                 }
             }
@@ -258,7 +264,7 @@ bool InjectItem(const std::string& itemName) {
         return false;
     }
     
-    // STEP 1: Get InvDatabase instance
+    // STEP 1: Get InvDatabase instance via Unity API
     void* invDB = FindInvDatabaseInstance();
     if (invDB == nullptr) {
         LOGE("[PROTOCOL] ERROR: InvDatabase instance not found!");
@@ -352,8 +358,8 @@ ElfScanner g_il2cppELF;
 // ======================================
 void *hack_thread(void *) {
     LOGI(OBFUSCATE("========================================"));
-    LOGI(OBFUSCATE("Protocol Migration v1.891 - FINAL"));
-    LOGI(OBFUSCATE("int16 fix + InvDatabase Instance"));
+    LOGI(OBFUSCATE("Protocol Migration v1.891 - UNITY API"));
+    LOGI(OBFUSCATE("FindObjectOfType + int16 fix"));
     LOGI(OBFUSCATE("========================================"));
 
     do {
@@ -374,7 +380,18 @@ void *hack_thread(void *) {
         il2cpp_assembly_get_image = (il2cpp_assembly_get_image_t)dlsym(il2cppHandle, "il2cpp_assembly_get_image");
         il2cpp_type_get_object = (il2cpp_type_get_object_t)dlsym(il2cppHandle, "il2cpp_type_get_object");
         il2cpp_object_new = (il2cpp_object_new_t)dlsym(il2cppHandle, "il2cpp_object_new");
+        il2cpp_resolve_icall = (il2cpp_resolve_icall_t)dlsym(il2cppHandle, "il2cpp_resolve_icall");
         LOGI("[INIT] Il2Cpp API initialized");
+    }
+    
+    // Resolve Unity API
+    if (il2cpp_resolve_icall != nullptr) {
+        UnityObject_FindObjectOfType = (void* (*)(void*))il2cpp_resolve_icall("UnityEngine.Object::FindObjectOfType");
+        if (UnityObject_FindObjectOfType != nullptr) {
+            LOGI("[INIT] Unity FindObjectOfType resolved: %p", UnityObject_FindObjectOfType);
+        } else {
+            LOGE("[INIT] FAILED to resolve Unity FindObjectOfType!");
+        }
     }
     
     FindObjectsOfTypeAll = (FindObjectsOfTypeAll_t)getAbsoluteAddress(targetLibName, 0x423CCE4);
@@ -408,7 +425,7 @@ void *hack_thread(void *) {
     HOOK(targetLibName, RVA_ATTACK_COMPONENT_UPDATE, Update, old_Update);
     LOGI("[INIT] AttackComponent.Update hooked (STABLE)");
     LOGI(OBFUSCATE("========================================"));
-    LOGI(OBFUSCATE("READY - int16 fix + Instance lookup"));
+    LOGI(OBFUSCATE("READY - Unity API + int16 fix"));
     LOGI(OBFUSCATE("========================================"));
 #endif
     return nullptr;
