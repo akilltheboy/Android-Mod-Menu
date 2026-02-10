@@ -2,6 +2,7 @@
 // School of Chaos v1.891 - Protocol Migration
 // Data Serialization Bug Fix - Inventory Synchronization
 // FACTORY PATTERN IMPLEMENTED - Blueprint → Instance
+// BUG FIX: itemId offset corrected to 0x10 (was 0x18)
 // 
 // REFERENCE: RESEARCH_NOTES.md (Diff Report v1.761 -> v1.891)
 // MIGRATION: String API -> Object API
@@ -27,7 +28,7 @@ std::string targetItemName = "";
 bool injectItemPressed = false;
 void* g_AttackComponent = nullptr;
 void* g_NetworkCore = nullptr;
-void* g_InvGameItemClass = nullptr;  // Cache for InvGameItem class
+void* g_InvGameItemClass = nullptr;
 
 // ======================================
 // Il2Cpp Type Definitions
@@ -43,19 +44,8 @@ typedef void* (*il2cpp_assembly_get_image_t)(void* assembly);
 typedef void* (*il2cpp_type_get_object_t)(void* type);
 typedef void* (*il2cpp_object_new_t)(void* klass);
 
-// Factory Constructor: InvGameItem.ctor(int itemId, InvBaseItem blueprint)
-// RVA: 0x4775374 - Creates Instance from Blueprint
 typedef void (*InvGameItemConstructor_t)(void* instance, int itemId, void* blueprint);
-
-// NetworkCore.GiveItem
-typedef void (*NetworkCoreGiveItem_t)(
-    void* networkCore,
-    void* badNerdItem,
-    int count,
-    void* senderName,
-    void* message,
-    void* lastParam
-);
+typedef void (*NetworkCoreGiveItem_t)(void* networkCore, void* badNerdItem, int count, void* senderName, void* message, void* lastParam);
 
 // ======================================
 // Global Function Pointers
@@ -164,10 +154,10 @@ void* FindNetworkCoreInstance() {
 // ======================================
 // FACTORY: Create Item Instance from Blueprint
 // ======================================
-// Step 2 of 3: Convert Blueprint → Instance using constructor at 0x4775374
+// CRITICAL FIX: itemId is at offset 0x10 (mBaseItemID), NOT 0x18 (itemLevel)
 void* CreateItemInstance(void* blueprint) {
     if (blueprint == nullptr || il2cpp_object_new == nullptr || g_InvGameItemClass == nullptr) {
-        LOGE("[FACTORY] Invalid parameters for instance creation!");
+        LOGE("[FACTORY] Invalid parameters!");
         return nullptr;
     }
     
@@ -179,16 +169,16 @@ void* CreateItemInstance(void* blueprint) {
     // Allocate new InvGameItem instance
     void* instance = il2cpp_object_new(g_InvGameItemClass);
     if (instance == nullptr) {
-        LOGE("[FACTORY] Failed to allocate InvGameItem instance!");
+        LOGE("[FACTORY] Failed to allocate instance!");
         return nullptr;
     }
     
-    // Get item ID from blueprint (offset 0x18 typically)
-    int itemId = *(int*)((uintptr_t)blueprint + 0x18);
-    LOGI("[FACTORY] Creating instance with itemId: %d", itemId);
+    // CRITICAL FIX: mBaseItemID is at offset 0x10, NOT 0x18!
+    // 0x18 is itemLevel, 0x10 is mBaseItemID
+    int itemId = *(int*)((uintptr_t)blueprint + 0x10);
+    LOGI("[FACTORY] Creating instance with itemId: %d (from offset 0x10)", itemId);
     
     // Call constructor: InvGameItem.ctor(itemId, blueprint)
-    // RVA: 0x4775374
     InvGameItemConstructor(instance, itemId, blueprint);
     
     LOGI("[FACTORY] Instance created: %p", instance);
@@ -198,13 +188,9 @@ void* CreateItemInstance(void* blueprint) {
 // ======================================
 // Inject Item with Factory Pattern
 // ======================================
-// Step 1: Get Blueprint (InvDatabase.GetItemByName)
-// Step 2: Create Instance (Factory Constructor)
-// Step 3: Send to Server (NetworkCore.GiveItem)
 bool InjectItem(const std::string& itemName) {
     LOGI("==============================================");
-    LOGI("[PROTOCOL] Starting Object Injection Sequence");
-    LOGI("[PROTOCOL] Target: %s", itemName.c_str());
+    LOGI("[PROTOCOL] Starting Injection - Target: %s", itemName.c_str());
     LOGI("==============================================");
     
     if (g_AttackComponent == nullptr) {
@@ -217,17 +203,17 @@ bool InjectItem(const std::string& itemName) {
         return false;
     }
     
-    // STEP 1: Get Blueprint from global database
-    LOGI("[PROTOCOL] Step 1: Getting Blueprint from InvDatabase...");
+    // STEP 1: Get Blueprint
+    LOGI("[PROTOCOL] Step 1: Getting Blueprint...");
     void* itemNameStr = Il2CppStringNew(itemName.c_str());
     if (itemNameStr == nullptr) {
         LOGE("[PROTOCOL] ERROR: Failed to create Il2CppString!");
         return false;
     }
     
-    void* blueprint = GetItemByName(nullptr, itemNameStr);  // Static method
+    void* blueprint = GetItemByName(nullptr, itemNameStr);
     if (blueprint == nullptr) {
-        LOGE("[PROTOCOL] ERROR: Item '%s' not found in database!", itemName.c_str());
+        LOGE("[PROTOCOL] ERROR: Item '%s' not found!", itemName.c_str());
         return false;
     }
     LOGI("[PROTOCOL] Step 1 SUCCESS: Blueprint = %p", blueprint);
@@ -236,12 +222,12 @@ bool InjectItem(const std::string& itemName) {
     LOGI("[PROTOCOL] Step 2: Creating Instance from Blueprint...");
     void* instance = CreateItemInstance(blueprint);
     if (instance == nullptr) {
-        LOGE("[PROTOCOL] ERROR: Failed to create item instance!");
+        LOGE("[PROTOCOL] ERROR: Failed to create instance!");
         return false;
     }
     LOGI("[PROTOCOL] Step 2 SUCCESS: Instance = %p", instance);
     
-    // STEP 3: Get NetworkCore and send
+    // STEP 3: Send to server
     LOGI("[PROTOCOL] Step 3: Sending to server...");
     void* networkCore = FindNetworkCoreInstance();
     if (networkCore == nullptr) {
@@ -257,7 +243,7 @@ bool InjectItem(const std::string& itemName) {
     void* senderStr = Il2CppStringNew("VNL Entertainment");
     void* messageStr = Il2CppStringNew("");
     
-    LOGI("[PROTOCOL] Calling GiveItem with Instance (NOT Blueprint)!");
+    LOGI("[PROTOCOL] Calling GiveItem with Instance!");
     NetworkCoreGiveItem(networkCore, instance, 1, senderStr, messageStr, nullptr);
     
     LOGI("==============================================");
@@ -302,6 +288,7 @@ ElfScanner g_il2cppELF;
 void *hack_thread(void *) {
     LOGI(OBFUSCATE("========================================"));
     LOGI(OBFUSCATE("Protocol Migration v1.891 - FACTORY MODE"));
+    LOGI(OBFUSCATE("BUG FIX: itemId offset = 0x10 (mBaseItemID)"));
     LOGI(OBFUSCATE("========================================"));
 
     do {
@@ -325,7 +312,6 @@ void *hack_thread(void *) {
         LOGI("[INIT] Il2Cpp API initialized");
     }
     
-    // Initialize functions
     FindObjectsOfTypeAll = (FindObjectsOfTypeAll_t)getAbsoluteAddress(targetLibName, 0x423CCE4);
     GetItemByName = (GetItemByName_t)getAbsoluteAddress(targetLibName, RVA_GET_ITEM_BY_NAME);
     NetworkCoreGiveItem = (NetworkCoreGiveItem_t)getAbsoluteAddress(targetLibName, RVA_NETWORKCORE_GIVE_ITEM);
@@ -335,7 +321,7 @@ void *hack_thread(void *) {
     LOGI("[INIT] GiveItem: %p", NetworkCoreGiveItem);
     LOGI("[INIT] ItemConstructor: %p", InvGameItemConstructor);
     
-    // Cache InvGameItem class for factory
+    // Cache InvGameItem class
     if (il2cpp_domain_get != nullptr) {
         void* domain = il2cpp_domain_get();
         if (domain != nullptr) {
@@ -346,7 +332,7 @@ void *hack_thread(void *) {
                 if (image != nullptr) {
                     g_InvGameItemClass = il2cpp_class_from_name(image, "", "InvGameItem");
                     if (g_InvGameItemClass != nullptr) {
-                        LOGI("[INIT] InvGameItem class cached: %p", g_InvGameItemClass);
+                        LOGI("[INIT] InvGameItem class: %p", g_InvGameItemClass);
                         break;
                     }
                 }
@@ -357,7 +343,7 @@ void *hack_thread(void *) {
     HOOK(targetLibName, RVA_ATTACK_COMPONENT_UPDATE, Update, old_Update);
     LOGI("[INIT] AttackComponent.Update hooked");
     LOGI(OBFUSCATE("========================================"));
-    LOGI(OBFUSCATE("FACTORY PATTERN READY - Input & Inject"));
+    LOGI(OBFUSCATE("FACTORY READY - Offset 0x10 Fix Applied"));
     LOGI(OBFUSCATE("========================================"));
 #endif
     return nullptr;
