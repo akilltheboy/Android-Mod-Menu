@@ -228,8 +228,8 @@ bool InjectItem(const std::string& itemName) {
         return false;
     }
     
-    // Try with AttackComponent as instance (might need a valid object)
-    void* blueprint = GetItemByName(g_AttackComponent, itemNameStr);
+    // Pass nullptr as first arg because it is a Static Method
+    void* blueprint = GetItemByName(nullptr, itemNameStr);
     if (blueprint == nullptr) {
         LOGE("[PROTOCOL] ERROR: Item '%s' not found!", itemName.c_str());
         return false;
@@ -302,7 +302,7 @@ void Update(void *instance) {
 ElfScanner g_il2cppELF;
 
 #define RVA_ATTACK_COMPONENT_UPDATE  0x41CB458
-#define RVA_GET_ITEM_BY_NAME         0x4772384   // InvDatabase.GetItemByName(string) - CORRECT RVA
+#define RVA_GET_ITEM_BY_NAME         0x4772328   // InvDatabase.GetItemByName(string) - Global Factory
 #define RVA_NETWORKCORE_GIVE_ITEM    0x302EC74   // NetworkCore.GiveItem
 #define RVA_ITEM_CONSTRUCTOR         0x477577C   // InvGameItem.ctor(int, InvBaseItem)
 
