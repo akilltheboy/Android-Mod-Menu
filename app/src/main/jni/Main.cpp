@@ -233,7 +233,8 @@ bool InjectItem(const std::string& itemName) {
         return false;
     }
     
-    void* itemObj = GetItemByName(g_AttackComponent, itemNameStr);
+    // NOTE: InvDatabase.GetItemByName is STATIC - pass nullptr for instance
+    void* itemObj = GetItemByName(nullptr, itemNameStr);
     if (itemObj == nullptr) {
         LOGE("[PROTOCOL] ERROR: Item '%s' not found!", itemName.c_str());
         LOGI("[PROTOCOL] TIP: Use exact item names from game files");
@@ -317,7 +318,7 @@ ElfScanner g_il2cppELF;
 // RVA Offsets for School of Chaos v1.891 (arm64)
 // SOURCE: RESEARCH_NOTES.md - Diff Report v1.761 -> v1.891
 #define RVA_ATTACK_COMPONENT_UPDATE  0x41CB458   // AttackComponent.Update()
-#define RVA_GET_ITEM_BY_NAME         0x41C8D24   // AttackComponent.GetItemByName(string)
+#define RVA_GET_ITEM_BY_NAME         0x4772328   // InvDatabase.GetItemByName(string) - FIXED! Global database (was 0x41C8D24 player inventory)
 #define RVA_NETWORKCORE_GIVE_ITEM    0x302EC74   // NetworkCore.GiveItem(BadNerdItem*, ...)
 
 // ======================================
