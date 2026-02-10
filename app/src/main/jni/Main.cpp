@@ -5,6 +5,7 @@
 // FIX 1: Factory Pattern with correct RVA 0x477577C
 // FIX 2: Stability - g_NetworkCore captured ONCE
 // FIX 3: Offset Scanner 0x10-0x30 for ItemID
+// FIX 4: DEREFERENCE offset 0x10 to get real InvBaseItem
 // ======================================
 
 #include <cstring>
@@ -181,6 +182,19 @@ void* CreateItemInstance(void* blueprint) {
         return nullptr;
     }
     
+    // CRITICAL FIX: Dereference offset 0x10 to get REAL InvBaseItem
+    // The blueprint pointer is a WRAPPER containing pointer at offset 0x10
+    void** realBlueprintPtr = (void**)((uintptr_t)blueprint + 0x10);
+    void* realBlueprint = *realBlueprintPtr;
+    
+    LOGI("[FACTORY] Wrapper blueprint: %p", blueprint);
+    LOGI("[FACTORY] Real blueprint (dereferenced): %p", realBlueprint);
+    
+    if (realBlueprint == nullptr) {
+        LOGE("[FACTORY] Real blueprint is NULL!");
+        return nullptr;
+    }
+    
     // Allocate new InvGameItem instance
     void* instance = il2cpp_object_new(g_InvGameItemClass);
     if (instance == nullptr) {
@@ -188,27 +202,13 @@ void* CreateItemInstance(void* blueprint) {
         return nullptr;
     }
     
-    // Use heuristic to find valid itemId from scanner results
-    // Usually it's a small positive integer (< 10000)
-    int itemId = 0;
-    for (int offset = 0x10; offset <= 0x30; offset += 4) {
-        int candidate = *(int*)((uintptr_t)blueprint + offset);
-        if (candidate > 0 && candidate < 10000) {
-            itemId = candidate;
-            LOGI("[FACTORY] Using itemId %d from offset 0x%02X", itemId, offset);
-            break;
-        }
-    }
+    // Get itemId from REAL blueprint at offset 0x10 (id16 field)
+    int itemId = *(int*)((uintptr_t)realBlueprint + 0x10);
+    LOGI("[FACTORY] ItemID from real blueprint offset 0x10: %d", itemId);
     
-    if (itemId == 0) {
-        // Fallback to offset 0x10
-        itemId = *(int*)((uintptr_t)blueprint + 0x10);
-        LOGI("[FACTORY] Fallback itemId from 0x10: %d", itemId);
-    }
-    
-    // Call constructor: InvGameItem.ctor(itemId, blueprint)
+    // Call constructor with REAL blueprint
     // RVA: 0x477577C
-    InvGameItemConstructor(instance, itemId, blueprint);
+    InvGameItemConstructor(instance, itemId, realBlueprint);
     
     LOGI("[FACTORY] Instance created: %p", instance);
     return instance;
@@ -322,8 +322,8 @@ ElfScanner g_il2cppELF;
 // ======================================
 void *hack_thread(void *) {
     LOGI(OBFUSCATE("========================================"));
-    LOGI(OBFUSCATE("Protocol Migration v1.891 - FINAL"));
-    LOGI(OBFUSCATE("Factory + Stability + Scanner"));
+    LOGI(OBFUSCATE("Protocol Migration v1.891 - DEREFERENCE"));
+    LOGI(OBFUSCATE("Factory + Stability + Dereference"));
     LOGI(OBFUSCATE("========================================"));
 
     do {
@@ -378,7 +378,7 @@ void *hack_thread(void *) {
     HOOK(targetLibName, RVA_ATTACK_COMPONENT_UPDATE, Update, old_Update);
     LOGI("[INIT] AttackComponent.Update hooked (STABLE)");
     LOGI(OBFUSCATE("========================================"));
-    LOGI(OBFUSCATE("READY - Factory + Scanner Active"));
+    LOGI(OBFUSCATE("READY - Dereference Fix Active"));
     LOGI(OBFUSCATE("========================================"));
 #endif
     return nullptr;
