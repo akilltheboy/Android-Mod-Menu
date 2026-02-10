@@ -182,33 +182,21 @@ void* CreateItemInstance(void* blueprint) {
         return nullptr;
     }
     
-    // CRITICAL FIX: Dereference offset 0x10 to get REAL InvBaseItem
-    // The blueprint pointer is a WRAPPER containing pointer at offset 0x10
-    void** realBlueprintPtr = (void**)((uintptr_t)blueprint + 0x10);
-    void* realBlueprint = *realBlueprintPtr;
-    
-    LOGI("[FACTORY] Wrapper blueprint: %p", blueprint);
-    LOGI("[FACTORY] Real blueprint (dereferenced): %p", realBlueprint);
-    
-    if (realBlueprint == nullptr) {
-        LOGE("[FACTORY] Real blueprint is NULL!");
-        return nullptr;
-    }
-    
-    // Allocate new InvGameItem instance
+// Allocate new InvGameItem instance
     void* instance = il2cpp_object_new(g_InvGameItemClass);
     if (instance == nullptr) {
         LOGE("[FACTORY] Failed to allocate instance!");
         return nullptr;
     }
     
-    // Get itemId from REAL blueprint at offset 0x10 (id16 field)
-    int itemId = *(int*)((uintptr_t)realBlueprint + 0x10);
-    LOGI("[FACTORY] ItemID from real blueprint offset 0x10: %d", itemId);
+    // Get itemId from blueprint at offset 0x10 (id16 field)
+    int itemId = *(int*)((uintptr_t)blueprint + 0x10);
+    LOGI("[FACTORY] Blueprint: %p", blueprint);
+    LOGI("[FACTORY] ItemID from blueprint offset 0x10: %d", itemId);
     
-    // Call constructor with REAL blueprint
+    // Call constructor with blueprint
     // RVA: 0x477577C
-    InvGameItemConstructor(instance, itemId, realBlueprint);
+    InvGameItemConstructor(instance, itemId, blueprint);
     
     LOGI("[FACTORY] Instance created: %p", instance);
     return instance;
@@ -313,7 +301,7 @@ void Update(void *instance) {
 ElfScanner g_il2cppELF;
 
 #define RVA_ATTACK_COMPONENT_UPDATE  0x41CB458
-#define RVA_GET_ITEM_BY_NAME         0x4772328   // InvDatabase.GetItemByName(string)
+#define RVA_GET_ITEM_BY_NAME         0x4772384   // InvDatabase.GetItemByName(string) - CORRECT RVA
 #define RVA_NETWORKCORE_GIVE_ITEM    0x302EC74   // NetworkCore.GiveItem
 #define RVA_ITEM_CONSTRUCTOR         0x477577C   // InvGameItem.ctor(int, InvBaseItem)
 
