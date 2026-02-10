@@ -1,11 +1,11 @@
 // ======================================
 // School of Chaos v1.891 - Protocol Migration
-// FINAL VERSION - All Critical Fixes Applied
+// FINAL VERSION - Critical Fixes Applied
 // 
-// FIX 1: Factory Pattern with correct RVA 0x477577C
-// FIX 2: Stability - g_NetworkCore captured ONCE
-// FIX 3: Offset Scanner 0x10-0x30 for ItemID
-// FIX 4: DEREFERENCE offset 0x10 to get real InvBaseItem
+// FIX 1: int16 read for itemId (was reading int32 garbage)
+// FIX 2: Find InvDatabase instance (GetItemByName needs instance)
+// FIX 3: Factory Pattern with correct RVA 0x477577C
+// FIX 4: Stability - capture once
 // ======================================
 
 #include <cstring>
@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include <pthread.h>
+#include <stdint.h>
 #include "Includes/Logger.h"
 #include "Includes/obfuscate.h"
 #include "Includes/Utils.hpp"
@@ -28,6 +29,7 @@ std::string targetItemName = "";
 bool injectItemPressed = false;
 void* g_AttackComponent = nullptr;
 void* g_NetworkCore = nullptr;
+void* g_InvDatabase = nullptr;
 void* g_InvGameItemClass = nullptr;
 
 // ======================================
@@ -113,9 +115,7 @@ void Changes(JNIEnv *env, jclass clazz, jobject obj, jint featNum, jstring featN
 // ======================================
 // Find NetworkCore Instance - STABILITY FIX
 // ======================================
-// CRITICAL: Only search and cache ONCE to prevent crashes
 void* FindNetworkCoreInstance() {
-    // Return cached instance if already found
     if (g_NetworkCore != nullptr) return g_NetworkCore;
     if (il2cpp_domain_get == nullptr || FindObjectsOfTypeAll == nullptr) return nullptr;
     
@@ -141,7 +141,7 @@ void* FindNetworkCoreInstance() {
                         if (count > 0) {
                             void** items = (void**)((uintptr_t)instancesArray + 0x20);
                             g_NetworkCore = items[0];
-                            LOGI("[STABILITY] NetworkCore cached ONCE: %p", g_NetworkCore);
+                            LOGI("[STABILITY] NetworkCore cached: %p", g_NetworkCore);
                             return g_NetworkCore;
                         }
                     }
@@ -154,13 +154,53 @@ void* FindNetworkCoreInstance() {
 }
 
 // ======================================
-// OFFSET SCANNER: Find correct ItemID
+// Find InvDatabase Instance
+// ======================================
+void* FindInvDatabaseInstance() {
+    if (g_InvDatabase != nullptr) return g_InvDatabase;
+    if (il2cpp_domain_get == nullptr || FindObjectsOfTypeAll == nullptr) return nullptr;
+    
+    void* domain = il2cpp_domain_get();
+    if (domain == nullptr) return nullptr;
+    
+    size_t assemblyCount = 0;
+    void** assemblies = il2cpp_domain_get_assemblies(domain, &assemblyCount);
+    
+    for (size_t i = 0; i < assemblyCount; i++) {
+        void* image = il2cpp_assembly_get_image(assemblies[i]);
+        if (image == nullptr) continue;
+        
+        void* invDBClass = il2cpp_class_from_name(image, "", "InvDatabase");
+        if (invDBClass != nullptr) {
+            void* type = il2cpp_class_get_type(invDBClass);
+            if (type != nullptr) {
+                void* typeObject = il2cpp_type_get_object(type);
+                if (typeObject != nullptr) {
+                    void* instancesArray = FindObjectsOfTypeAll(typeObject);
+                    if (instancesArray != nullptr) {
+                        int count = *(int*)((uintptr_t)instancesArray + 0x18);
+                        if (count > 0) {
+                            void** items = (void**)((uintptr_t)instancesArray + 0x20);
+                            g_InvDatabase = items[0];
+                            LOGI("[STABILITY] InvDatabase cached: %p", g_InvDatabase);
+                            return g_InvDatabase;
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+    return nullptr;
+}
+
+// ======================================
+// OFFSET SCANNER
 // ======================================
 void ScanBlueprintOffsets(void* blueprint) {
     LOGI("[SCANNER] ========== SCANNING BLUEPRINT ==========");
-    LOGI("[SCANNER] Blueprint address: %p", blueprint);
+    LOGI("[SCANNER] Blueprint: %p", blueprint);
     
-    // Scan offsets 0x10 to 0x30 for integer values
     for (int offset = 0x10; offset <= 0x30; offset += 4) {
         int value = *(int*)((uintptr_t)blueprint + offset);
         LOGI("[SCANNER] Offset 0x%02X = %d (0x%08X)", offset, value, value);
@@ -169,7 +209,7 @@ void ScanBlueprintOffsets(void* blueprint) {
 }
 
 // ======================================
-// FACTORY: Create Item Instance from Blueprint
+// FACTORY: Create Item Instance
 // ======================================
 void* CreateItemInstance(void* blueprint) {
     if (blueprint == nullptr || il2cpp_object_new == nullptr || g_InvGameItemClass == nullptr) {
@@ -182,20 +222,18 @@ void* CreateItemInstance(void* blueprint) {
         return nullptr;
     }
     
-// Allocate new InvGameItem instance
     void* instance = il2cpp_object_new(g_InvGameItemClass);
     if (instance == nullptr) {
         LOGE("[FACTORY] Failed to allocate instance!");
         return nullptr;
     }
     
-    // Get itemId from blueprint at offset 0x10 (id16 field)
-    int itemId = *(int*)((uintptr_t)blueprint + 0x10);
+    // CRITICAL FIX: Read int16 (short) not int32
+    int16_t id16 = *(int16_t*)((uintptr_t)blueprint + 0x10);
+    int itemId = (int)id16;
     LOGI("[FACTORY] Blueprint: %p", blueprint);
-    LOGI("[FACTORY] ItemID from blueprint offset 0x10: %d", itemId);
+    LOGI("[FACTORY] ItemID (int16 read): %d", itemId);
     
-    // Call constructor with blueprint
-    // RVA: 0x477577C
     InvGameItemConstructor(instance, itemId, blueprint);
     
     LOGI("[FACTORY] Instance created: %p", instance);
@@ -203,7 +241,7 @@ void* CreateItemInstance(void* blueprint) {
 }
 
 // ======================================
-// Inject Item with Scanner
+// Inject Item
 // ======================================
 bool InjectItem(const std::string& itemName) {
     LOGI("==============================================");
@@ -220,7 +258,14 @@ bool InjectItem(const std::string& itemName) {
         return false;
     }
     
-    // STEP 1: Get Blueprint from global database
+    // STEP 1: Get InvDatabase instance
+    void* invDB = FindInvDatabaseInstance();
+    if (invDB == nullptr) {
+        LOGE("[PROTOCOL] ERROR: InvDatabase instance not found!");
+        return false;
+    }
+    
+    // STEP 2: Get Blueprint using instance
     LOGI("[PROTOCOL] Step 1: Getting Blueprint...");
     void* itemNameStr = Il2CppStringNew(itemName.c_str());
     if (itemNameStr == nullptr) {
@@ -228,28 +273,27 @@ bool InjectItem(const std::string& itemName) {
         return false;
     }
     
-    // Pass nullptr as first arg because it is a Static Method
-    void* blueprint = GetItemByName(nullptr, itemNameStr);
+    void* blueprint = GetItemByName(invDB, itemNameStr);
     if (blueprint == nullptr) {
         LOGE("[PROTOCOL] ERROR: Item '%s' not found!", itemName.c_str());
         return false;
     }
     LOGI("[PROTOCOL] Step 1 SUCCESS: Blueprint = %p", blueprint);
     
-    // STEP 2: SCAN OFFSETS 0x10-0x30 to find correct itemId
+    // STEP 3: Scan offsets
     ScanBlueprintOffsets(blueprint);
     
-    // STEP 3: Create Instance using Factory
-    LOGI("[PROTOCOL] Step 3: Creating Instance from Blueprint...");
+    // STEP 4: Create Instance
+    LOGI("[PROTOCOL] Step 2: Creating Instance...");
     void* instance = CreateItemInstance(blueprint);
     if (instance == nullptr) {
         LOGE("[PROTOCOL] ERROR: Failed to create instance!");
         return false;
     }
-    LOGI("[PROTOCOL] Step 3 SUCCESS: Instance = %p", instance);
+    LOGI("[PROTOCOL] Step 2 SUCCESS: Instance = %p", instance);
     
-    // STEP 4: Send to server
-    LOGI("[PROTOCOL] Step 4: Sending to server...");
+    // STEP 5: Send to server
+    LOGI("[PROTOCOL] Step 3: Sending to server...");
     void* networkCore = FindNetworkCoreInstance();
     if (networkCore == nullptr) {
         LOGE("[PROTOCOL] ERROR: NetworkCore not found!");
@@ -277,16 +321,13 @@ bool InjectItem(const std::string& itemName) {
 // ======================================
 // Hook: Update - STABILITY FIX
 // ======================================
-// CRITICAL: Only capture once to prevent crashes
 void (*old_Update)(void *instance);
 void Update(void *instance) {
-    // STABILITY FIX: Only assign if null - prevents constant writes
     if (instance != nullptr && g_AttackComponent == nullptr) {
         g_AttackComponent = instance;
         LOGI("[STABILITY] AttackComponent captured ONCE: %p", instance);
     }
     
-    // Handle injection request
     if (injectItemPressed && g_AttackComponent != nullptr) {
         injectItemPressed = false;
         InjectItem(targetItemName);
@@ -302,7 +343,7 @@ void Update(void *instance) {
 ElfScanner g_il2cppELF;
 
 #define RVA_ATTACK_COMPONENT_UPDATE  0x41CB458
-#define RVA_GET_ITEM_BY_NAME         0x4772328   // InvDatabase.GetItemByName(string) - Global Factory
+#define RVA_GET_ITEM_BY_NAME         0x4772384   // InvDatabase.GetItemByName(string)
 #define RVA_NETWORKCORE_GIVE_ITEM    0x302EC74   // NetworkCore.GiveItem
 #define RVA_ITEM_CONSTRUCTOR         0x477577C   // InvGameItem.ctor(int, InvBaseItem)
 
@@ -311,8 +352,8 @@ ElfScanner g_il2cppELF;
 // ======================================
 void *hack_thread(void *) {
     LOGI(OBFUSCATE("========================================"));
-    LOGI(OBFUSCATE("Protocol Migration v1.891 - DEREFERENCE"));
-    LOGI(OBFUSCATE("Factory + Stability + Dereference"));
+    LOGI(OBFUSCATE("Protocol Migration v1.891 - FINAL"));
+    LOGI(OBFUSCATE("int16 fix + InvDatabase Instance"));
     LOGI(OBFUSCATE("========================================"));
 
     do {
@@ -367,7 +408,7 @@ void *hack_thread(void *) {
     HOOK(targetLibName, RVA_ATTACK_COMPONENT_UPDATE, Update, old_Update);
     LOGI("[INIT] AttackComponent.Update hooked (STABLE)");
     LOGI(OBFUSCATE("========================================"));
-    LOGI(OBFUSCATE("READY - Dereference Fix Active"));
+    LOGI(OBFUSCATE("READY - int16 fix + Instance lookup"));
     LOGI(OBFUSCATE("========================================"));
 #endif
     return nullptr;
